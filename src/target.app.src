@@ -1,0 +1,6 @@
+{application, target,
+ [{description, "Targeted search strategies for proper"},
+  {vsn, "0.1"},
+  {registered, []},
+  {applications, [compiler,kernel,stdlib]},
+  {env, []}]}.
