@@ -9,11 +9,13 @@
 
 -type options() :: [{atom(), any()}].
 
+-type property() :: any().
+
 -export_type([target_state/0, next_func/0, fitness_func/0, target/0, options/0]).
 
 %% behaviour for strategies
 %% strategy global initializer
--callback init_strategy() -> ok.
+-callback init_strategy(property()) -> property().
 %% target (one variable) initializer
 -callback init_target(options()) -> target().
 %% store, update and retrieve state
@@ -25,11 +27,10 @@
 -define(GET_STRATEGY, get(target_strategy)).
 
 %% store the used strategy into the oprocess dictionary
--spec use_strategy(atom(), any()) -> ok.
+-spec use_strategy(atom(), any()) -> property().
 use_strategy(Strat, Prop) ->
     put(target_strategy, Strat),
-    ok = Strat:init_strategy(),
-    Prop.
+    Strat:init_strategy(Prop).
 
 -spec get_target(hash(), options()) -> target().
 get_target(Hash, Opts) ->

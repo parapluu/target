@@ -1,16 +1,16 @@
 -module(target_enumerate).
 -behaviour(target_strategy).
--export([init_strategy/0,
+-export([init_strategy/1,
 	 init_target/1,
 	 store_target/2,
 	 update_target_state/2,
 	 retrieve_target/1]).
 
-init_strategy() ->
+init_strategy(Prop) ->
     io:format("INIT~n"),
     erase(target_enumerate_data),
     undefined = put(target_enumerate_data, dict:new()),
-    ok.
+    Prop.
 
 init_target(_) ->
     %% enumerate targets are all integer targets counting from 0 upwards
