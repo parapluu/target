@@ -8,12 +8,10 @@
 enumerate_test() ->
     proper:quickcheck(prop_enum(),  [{to_file, user}, {numtests, 1000}]).
 
-
-
 prop_enum() ->
     ?TARGET_STRATEGY(target_enumerate,
 		    ?FORALL(I, ?TARGET(X, integer(0,X)),
 		     	     begin
 		     		 io:format("I: ~p~n", [I]),
-		     		 ?MAXIMIZE(I,I)
+		     		 ?MAXIMIZE(I,X)
 		     	     end)).

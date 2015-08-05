@@ -1,25 +1,35 @@
 -module(target).
--export([targeted/2, 
+-export([targeted/3, 
+	 adjust/2,
 	 adjust/3]).
 
-%% maximum phash value
--define(MAX_PHASH, 4294967296).
+-type key() :: nonempty_string().
+-type generator() :: any().
+-type fitness() :: any().
 
--include_lib("target.hrl").
+-export_type([key/0, fitness/0]).
 
-targeted(Gen, Opts) ->
-    proper_types:exactly(proper_types:lazy(fun() -> targeted_gen(Gen, Opts) end)).
+-spec targeted(key(), generator(), [{atom(), any()}]) -> generator().
+targeted(Key,Gen, Opts) ->
+    proper_types:exactly(proper_types:lazy(fun() -> targeted_gen(Key, Gen, Opts) end)).
 
 %% @private
-targeted_gen(Gen, Opts) ->
-    Hash = erlang:phash(Gen, ?MAX_PHASH),
-    {State, NextFunc, _FitnessFunc} = ?TARGET_STORRAGE_GET(Hash, Opts),
+targeted_gen(Key, Gen, Opts) ->
+    {State, NextFunc, _FitnessFunc} = target_strategy:get_target(Key, Opts),
     {NewState, NextValue} = NextFunc(State),
-    ?TARGET_STORRAGE_SET(Hash, NewState),
-    NextValue.
+    target_strategy:update_target(Key, NewState),
+    Gen(NextValue).
 
-adjust(Gen, Fitness, Threshold) ->
-    set_fitness(Gen, Fitness),
+adjust(Fitness, Threshold) ->
+    set_fitness(Fitness),
+    check_threshold(Threshold, Fitness).
+
+adjust(Fitness, Threshold, Key) ->
+    set_fitness(Fitness, Key),
+    check_threshold(Threshold, Fitness).
+
+%% @private
+check_threshold(Threshold, Fitness) ->
     case Threshold of
 	inf ->
 	    true;
@@ -28,8 +38,11 @@ adjust(Gen, Fitness, Threshold) ->
     end.
 
 %% @private
-set_fitness(Gen, Fitness) ->
-    Hash = erlang:phash(Gen, ?MAX_PHASH),
-    {State, _NextFunc, FitnessFunc} = ?TARGET_STORRAGE_GET(Hash, []),
+set_fitness(Fitness, Key) ->
+    {State, _NextFunc, FitnessFunc} = target_strategy:get_target(Key, []),
     NewState = FitnessFunc(State, Fitness),
-    ?TARGET_STORRAGE_SET(Hash, NewState).
+    target_strategy:update_target(Key, NewState).
+
+%% @private
+set_fitness(Fitness) ->
+    target_strategy:update_global(Fitness).
