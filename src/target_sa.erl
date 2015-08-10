@@ -157,8 +157,8 @@ integer(L, R) ->
 
 integer_next(L, R) ->
     fun (OldInstance, _Temperature) ->
-	    ?LET(X, proper_types:integer(), 
-		 L + ((X + OldInstance) rem (R-L)))
+	    ?LET(X, proper_types:integer(),
+		 make_inrange(X + OldInstance, L, R))
     end.
 
 float() ->
@@ -168,8 +168,12 @@ float(L, R) ->
     [{first, proper_types:float(L, R)},
      {next, float_next(L, R)}].
 
-float_next(_L, _R) ->
-    fun (_OldInstance, _Temperature) ->
-	    ?LET(_X, proper_types:float(),
-		 todo)
+float_next(L, R) ->
+    fun (OldInstance, _Temperature) ->
+	    ?LET(X, proper_types:float(),
+		 make_inrange(X+OldInstance, L, R))
     end.
+
+make_inrange(Val, L, R) when Val < R andalso Val > L -> Val;
+make_inrange(Val, L, _R) when Val < L -> L;
+make_inrange(Val, _L, R) when Val > R -> R.
