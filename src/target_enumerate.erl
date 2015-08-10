@@ -31,7 +31,7 @@ retrieve_target(Key) ->
     Dict = get(target_enumerate_data),
     case dict:is_key(Key, Dict) of
 	true ->
-	    dict:fetch(Key, get(target_enumerate_data));
+	    dict:fetch(Key, Dict);
 	false ->
 	    undefined
     end.

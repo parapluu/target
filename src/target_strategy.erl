@@ -55,5 +55,3 @@ update_target(Key, State) ->
 update_global(Fitness) ->
     Strategy = ?GET_STRATEGY,
     Strategy:update_global_fitness(Fitness).
-
-			   
