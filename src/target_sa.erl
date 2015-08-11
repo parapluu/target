@@ -30,7 +30,7 @@
 		 }).
 
 -define(DEFAULT_STEPS, 1000).
--define(MAX_SIZE, 100).
+-define(MAX_SIZE, 10000).
 
 acceptance_function(EnergyCurrent, EnergyNew, _Temperature) ->
     %% Todo: exchange hill climbing with SA acceptance function
@@ -61,7 +61,8 @@ init_target(Opts) ->
     create_target(parse_opts(Opts)).
 
 create_target(TargetState) ->
-    {TargetState,
+    {ok, InitialValue} = proper_gen:pick((TargetState#sa_target.first)),
+    {TargetState#sa_target{last_generated = InitialValue },
      fun next_func/1,
      %% dummy local fitness function
      fun (S, _) -> S end}.
@@ -76,7 +77,7 @@ next_func(State) ->
     %% getting the generator for the next element (dependend on size and the last generated element)
     NextGenerator = (State#sa_target.next)(State#sa_target.last_generated, Temperature),
     %% generate the next element
-    Generated = proper_gen:sample(NextGenerator, 0, MaxSize),
+    {ok, Generated} = proper_gen:pick(NextGenerator, MaxSize),
     %% return according to interface
     {State#sa_target{current_generated = Generated}, Generated}.
 
@@ -95,13 +96,13 @@ parse_opt(Opt, Opts) ->
 
 store_target(Key, Target) ->
     Data = get(target_sa_data),
-    NewData = Data#sa_data{state = dict:store(Key, Target, Data#sa_data.state)},
+    NewData = Data#sa_data{state = dict:store(Key, Target, (Data#sa_data.state))},
     put(target_sa_data, NewData),
     ok.
 
-update_target_state(_Key, _State) ->
-    io:format("[not supported] only global optimization is supported~n"),
-    ok.
+update_target_state(Key, TargetState) ->
+    {_, N, F} = retrieve_target(Key),
+    store_target(Key, {TargetState, N, F}).
 
 retrieve_target(Key) ->
     Dict = (get(target_sa_data))#sa_data.state,
@@ -115,7 +116,12 @@ retrieve_target(Key) ->
 update_global_fitness(Fitness) ->
     Data = get(target_sa_data),
     K_CURRENT = (Data#sa_data.k_current),
-    Temperature = K_CURRENT / (Data#sa_data.k_max),
+    K_MAX = (Data#sa_data.k_max),
+    NextK = case K_CURRENT=:=K_MAX of
+		true -> K_CURRENT;
+		false -> K_CURRENT+1
+	    end,    
+    Temperature = K_CURRENT / K_MAX,
     NewData = case (Data#sa_data.last_energy =:= null) 
 		  orelse
 		  (Data#sa_data.p)(Data#sa_data.last_energy,
@@ -126,23 +132,24 @@ update_global_fitness(Fitness) ->
 		      NewState = update_all_targets(Data#sa_data.state),
 		      Data#sa_data{state = NewState, 
 				   last_energy=Fitness, 
-				   k_current = K_CURRENT + 1};
+				   k_current = NextK};
 		  false ->
 		      %% reject new state
-		      Data#sa_data{k_current = K_CURRENT + 1}
+		      Data#sa_data{k_current = NextK}
 	      end,
     put(target_sa_data, NewData),
     ok.
 
 update_all_targets(TargetDict) ->
     %% update the last generated value with the current generated value (hence accepting new state)
-    update_all_targets(TargetDict, dict:keys(TargetDict)).
+    update_all_targets(TargetDict, dict:fetch_keys(TargetDict)).
 
 update_all_targets(Dict,  []) ->
     Dict;
 update_all_targets(Dict, [K|T]) ->
-    {S, N, F} = dict:fetch(K, Dict),
-    update_all_targets(dict:store(K, {S#sa_target{ last_generated = S#sa_target.current_generated }, N, F}),
+    FF = dict:fetch(K, Dict),
+    {S, N, F} = FF,
+    update_all_targets(dict:store(K, {S#sa_target{ last_generated = S#sa_target.current_generated }, N, F}, Dict),
 		       T).
 
 %% library
@@ -174,6 +181,6 @@ float_next(L, R) ->
 		 make_inrange(X+OldInstance, L, R))
     end.
 
-make_inrange(Val, L, R) when Val < R andalso Val > L -> Val;
+make_inrange(Val, L, R) when (R=:=inf orelse Val =< R) andalso (L=:=inf orelse Val >= L) -> Val;
 make_inrange(Val, L, _R) when Val < L -> L;
 make_inrange(Val, _L, R) when Val > R -> R.
