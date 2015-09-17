@@ -6,11 +6,14 @@
 	 update_target_state/2,
 	 retrieve_target/1,
 	 update_global_fitness/1,
+	 get_shrinker/1,
 	 %% lib
 	 integer/0,
 	 integer/2,
 	 float/0,
 	 float/2]).
+
+-include_lib("proper/include/proper_common.hrl").
 
 %% SA search strategy
 -type temperature() :: float().
@@ -23,18 +26,74 @@
 -type sa_target() :: #sa_target{}.
 
 -record(sa_data, {state = dict:new()             :: dict:dict(target_strategy:hash(), sa_target()),
+                  %% max runs
 		  k_max = 0                      :: integer(),
+		  %% run number
 		  k_current = 0                  :: integer(),
+		  %% acceptance probability
 		  p = fun (_, _, _) -> false end :: fun((float(), float(), temperature()) -> boolean()),
-		  last_energy = null             :: float() | null
+		  %% energy level
+		  last_energy = null             :: float() | null,
+		  %% temperature function
+		  temperature = 1.0 :: float(),
+		  temp_func = fun(_, _, _, _, _) -> 1.0 end :: fun(( %% old temperature
+								     float(),
+								     %% old energy level
+								     float(),
+								     %% new energy level
+								     float(),
+								     %% k_current
+								     integer(),
+								     %% k_max
+								     integer(),
+								     %% accepted or not
+								     boolean()) -> {float(), integer()})
 		 }).
 
 -define(DEFAULT_STEPS, 1000).
 -define(MAX_SIZE, 10000).
 
-acceptance_function(EnergyCurrent, EnergyNew, _Temperature) ->
+
+-define(RANDOM_PROPABILITY, (fun ({ok, V}) -> V end((proper_gen:pick(proper_types:float(0.0,1.0)))))).
+
+
+acceptance_function(EnergyCurrent, EnergyNew, Temperature) ->
     %% Todo: exchange hill climbing with SA acceptance function
-    EnergyNew > EnergyCurrent.
+    case EnergyNew > EnergyCurrent of
+	true ->
+	    %% allways accept better results
+	    true;
+	false ->
+	    %% probabilistic accepptance (allways between 0 and 0.5)
+	    AcceptancePropability  = try
+					 1 / (1 + math:exp(abs(EnergyCurrent - EnergyNew) / Temperature))
+				     catch
+					 error:badarith -> 0.0
+				     end,
+	    %% if random probability is less, accept
+	    ?RANDOM_PROPABILITY < AcceptancePropability
+    end.
+
+
+temperature_function_fast_sa(_OldTemperature,
+			     _OldEnergyLevel,
+			     _NewEnergyLevel,
+			     _K_Max,
+			     K_Current,
+			     Accepted) ->
+    AdjustedK = case Accepted of
+    		    true -> K_Current / 2;
+    		    false -> K_Current
+    		end,
+    {1 / max((1 + AdjustedK), 1.0), AdjustedK}.
+
+temperature_function_standart_sa(_OldTemperature,
+				 _OldEnergyLevel,
+				 _NewEnergyLevel,
+				 K_Max,
+				 K_Current,
+				 _Accepted) ->
+    {1.0 - (K_Current / K_Max), K_Current}.
 
 get_amount_of_steps({numtests, N, _}) ->
     N;
@@ -49,9 +108,25 @@ get_amount_of_steps(_) ->
 	_ -> ?DEFAULT_STEPS
     end.
 
+get_temperature_function() ->
+    case get(target_sa_tempfunc) of
+	default ->
+	    fun temperature_function_standart_sa/6;
+	fast ->
+	    fun temperature_function_fast_sa/6;
+	Fun when is_function(Fun) ->
+	    case proplists:lookup(arity, erlang:fun_info(Fun)) of
+		{arity, 6} -> Fun;
+		_ -> fun temperature_function_standart_sa/6
+	    end;
+	_ ->
+	    fun temperature_function_standart_sa/6
+    end.
+
 init_strategy(Prop) ->
     put(target_sa_data, #sa_data{k_max = get_amount_of_steps(Prop),
-				 p = fun acceptance_function/3
+				 p = fun acceptance_function/3,
+				 temp_func = get_temperature_function()
 				}),
     Prop.
 
@@ -61,19 +136,22 @@ init_target(Opts) ->
     create_target(parse_opts(Opts)).
 
 create_target(TargetState) ->
-    {ok, InitialValue} = proper_gen:pick((TargetState#sa_target.first)),
+    {ok, InitialValue} = proper_gen:pick((TargetState#sa_target.first), 1),
     {TargetState#sa_target{last_generated = InitialValue },
      fun next_func/1,
      %% dummy local fitness function
      fun (S, _) -> S end}.
 
+
+
 %% generating next element and updating the target state
 next_func(State) ->
     %% retrieving temperature
     GlobalData = get(target_sa_data),
-    Temperature = GlobalData#sa_data.k_current / GlobalData#sa_data.k_max,
+    Temperature = GlobalData#sa_data.temperature,
     %% calculating the max generated size
-    MaxSize = trunc(?MAX_SIZE * (1 - Temperature)) + 1,
+    MaxSize = trunc(?MAX_SIZE * Temperature) + 1,
+    %% io:format("MaxSize: ~p Temperature: ~p ~n", [MaxSize, Temperature]),
     %% getting the generator for the next element (dependend on size and the last generated element)
     NextGenerator = (State#sa_target.next)(State#sa_target.last_generated, Temperature),
     %% generate the next element
@@ -117,12 +195,13 @@ update_global_fitness(Fitness) ->
     Data = get(target_sa_data),
     K_CURRENT = (Data#sa_data.k_current),
     K_MAX = (Data#sa_data.k_max),
-    NextK = case K_CURRENT=:=K_MAX of
-		true -> K_CURRENT;
+    NextK = case K_CURRENT>=K_MAX of
+		true -> K_MAX;
 		false -> K_CURRENT+1
-	    end,    
-    Temperature = K_CURRENT / K_MAX,
-    NewData = case (Data#sa_data.last_energy =:= null) 
+	    end,
+    %% Temperature = 1 - (K_CURRENT / K_MAX),
+    Temperature = Data#sa_data.temperature,
+    NewData = case (Data#sa_data.last_energy =:= null)
 		  orelse
 		  (Data#sa_data.p)(Data#sa_data.last_energy,
 				   Fitness,
@@ -130,12 +209,27 @@ update_global_fitness(Fitness) ->
 		  true ->
 		      %% accept new state
 		      NewState = update_all_targets(Data#sa_data.state),
-		      Data#sa_data{state = NewState, 
-				   last_energy=Fitness, 
-				   k_current = NextK};
+		      %% calculate new temperature
+		      {NewTemperature, AdjustedK} = (Data#sa_data.temp_func)(Temperature,
+									     Data#sa_data.last_energy,
+									     Fitness,
+									     K_MAX,
+									     NextK,
+									     true),
+		      Data#sa_data{state = NewState,
+				   last_energy=Fitness,
+				   k_current = AdjustedK,
+				   temperature = NewTemperature};
 		  false ->
 		      %% reject new state
-		      Data#sa_data{k_current = NextK}
+		      %% calculate new temperature
+		      {NewTemperature, AdjustedK} = (Data#sa_data.temp_func)(Temperature,
+									     Data#sa_data.last_energy,
+									     Fitness,
+									     K_MAX,
+									     NextK,
+									     false),
+		      Data#sa_data{k_current = AdjustedK, temperature = NewTemperature}
 	      end,
     put(target_sa_data, NewData),
     ok.
@@ -152,9 +246,10 @@ update_all_targets(Dict, [K|T]) ->
     update_all_targets(dict:store(K, {S#sa_target{ last_generated = S#sa_target.current_generated }, N, F}, Dict),
 		       T).
 
-%% library
--include_lib("proper/include/proper_common.hrl").
+get_shrinker(Opts) ->
+    ((parse_opts(Opts))#sa_target.first).
 
+%% library
 integer() ->
     ?MODULE:integer(inf, inf).
 
@@ -163,8 +258,15 @@ integer(L, R) ->
      {next, integer_next(L, R)}].
 
 integer_next(L, R) ->
-    fun (OldInstance, _Temperature) ->
-	    ?LET(X, proper_types:integer(),
+    fun (OldInstance, Temperature) ->
+	    {LL, LR} = case L=:=inf orelse R=:=inf of
+			   true ->
+			       {inf, inf};
+			   false ->
+			       Limit = trunc(abs(L - R) * Temperature * 0.1) + 1,
+			       {-Limit, Limit}
+		       end,
+	    ?LET(X, proper_types:integer(LL, LR),
 		 make_inrange(X + OldInstance, L, R))
     end.
 
@@ -176,8 +278,15 @@ float(L, R) ->
      {next, float_next(L, R)}].
 
 float_next(L, R) ->
-    fun (OldInstance, _Temperature) ->
-	    ?LET(X, proper_types:float(),
+    fun (OldInstance, Temperature) ->
+	    {LL, LR} = case L=:=inf orelse R=:=inf of
+			   true ->
+			       {inf, inf};
+			   false ->
+			       Limit = abs(L - R) * Temperature * 0.1,
+			       {-Limit, Limit}
+		       end,
+	    ?LET(X, proper_types:float(LL, LR),
 		 make_inrange(X+OldInstance, L, R))
     end.
 

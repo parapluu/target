@@ -1,7 +1,9 @@
 -module(target).
--export([targeted/3, 
-	 adjust/2,
-	 adjust/3]).
+-export([targeted/3,
+         adjust/2,
+         adjust/3]).
+
+-include_lib("proper/include/proper_common.hrl").
 
 -type key() :: nonempty_string().
 -type generator() :: any().
@@ -11,7 +13,8 @@
 
 -spec targeted(key(), generator(), [{atom(), any()}]) -> generator().
 targeted(Key,Gen, Opts) ->
-    proper_types:exactly(proper_types:lazy(fun() -> targeted_gen(Key, Gen, Opts) end)).
+    ?SHRINK(proper_types:exactly(?LAZY(targeted_gen(Key, Gen, Opts))),
+            [?LAZY(Gen(target_strategy:shrink_gen(Opts)))]).
 
 %% @private
 targeted_gen(Key, Gen, Opts) ->
@@ -31,10 +34,10 @@ adjust(Fitness, Threshold, Key) ->
 %% @private
 check_threshold(Threshold, Fitness) ->
     case Threshold of
-	inf ->
-	    true;
-	_ ->
-	    Fitness < Threshold
+        inf ->
+            true;
+        _ ->
+            Fitness < Threshold
     end.
 
 %% @private

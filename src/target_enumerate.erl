@@ -5,7 +5,9 @@
 	 store_target/2,
 	 update_target_state/2,
 	 retrieve_target/1,
-	 update_global_fitness/1]).
+	 update_global_fitness/1,
+	 get_shrinker/1
+	]).
 
 init_strategy(Prop) ->
     erase(target_enumerate_data),
@@ -38,3 +40,6 @@ retrieve_target(Key) ->
 
 update_global_fitness(_Fitness) ->
     ok.
+
+get_shrinker(_) ->
+    proper_types:integer().
