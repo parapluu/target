@@ -52,13 +52,12 @@
 
 -define(DEFAULT_STEPS, 1000).
 -define(MAX_SIZE, 10000).
-
+-define(REHEAT_THRESHOLD, 25).
 
 -define(RANDOM_PROPABILITY, (fun ({ok, V}) -> V end((proper_gen:pick(proper_types:float(0.0,1.0)))))).
 
 
-acceptance_function(EnergyCurrent, EnergyNew, Temperature) ->
-    %% Todo: exchange hill climbing with SA acceptance function
+acceptance_function_standart(EnergyCurrent, EnergyNew, Temperature) ->
     case EnergyNew > EnergyCurrent of
 	true ->
 	    %% allways accept better results
@@ -66,7 +65,8 @@ acceptance_function(EnergyCurrent, EnergyNew, Temperature) ->
 	false ->
 	    %% probabilistic accepptance (allways between 0 and 0.5)
 	    AcceptancePropability  = try
-					 1 / (1 + math:exp(abs(EnergyCurrent - EnergyNew) / Temperature))
+					%%  1 / (1 + math:exp(abs(EnergyCurrent - EnergyNew) / Temperature))
+					 math:exp(-(EnergyCurrent - EnergyNew) / Temperature)
 				     catch
 					 error:badarith -> 0.0
 				     end,
@@ -74,6 +74,25 @@ acceptance_function(EnergyCurrent, EnergyNew, Temperature) ->
 	    ?RANDOM_PROPABILITY < AcceptancePropability
     end.
 
+acceptance_function_normalized(EnergyCurrent, EnergyNew, Temperature) ->
+    case EnergyNew > EnergyCurrent of
+	true ->
+	    %% allways accept better results
+	    true;
+	false ->
+	    %% probabilistic accepptance (allways between 0 and 0.5)
+	    AcceptancePropability  = try
+					 1 / (1 + math:exp( (1 -  (EnergyNew/EnergyCurrent)) / Temperature))
+				     catch
+					 error:badarith -> 0.0
+				     end,
+	    %% if random probability is less, accept
+	    ?RANDOM_PROPABILITY < AcceptancePropability
+    end.
+
+acceptance_function_hillclimbing(EnergyCurrent, EnergyNew, _Temperature) ->
+    %% Hill-Climbing
+    EnergyNew > EnergyCurrent.
 
 temperature_function_fast_sa(_OldTemperature,
 			     _OldEnergyLevel,
@@ -81,11 +100,35 @@ temperature_function_fast_sa(_OldTemperature,
 			     _K_Max,
 			     K_Current,
 			     Accepted) ->
-    AdjustedK = case Accepted of
-    		    true -> K_Current / 2;
-    		    false -> K_Current
+    AdjustedK = case not Accepted of
+    		    true ->
+			case get(target_se_reheat_counter) of
+			    undefined ->
+				put(target_se_reheat_counter, 1),
+				K_Current + 1;
+			    N when N >= ?REHEAT_THRESHOLD->
+				put(target_se_reheat_counter, 0),
+				max(1, K_Current - trunc(1.5 * ?REHEAT_THRESHOLD));
+			    N ->
+				put(target_se_reheat_counter, N + 1),
+				K_Current + 1
+			end;
+    		    false -> K_Current + 1
     		end,
     {1 / max((1 + AdjustedK), 1.0), AdjustedK}.
+
+temperature_function_fast2_sa(_OldTemperature,
+			      _OldEnergyLevel,
+			      _NewEnergyLevel,
+			      _K_Max,
+			      K_Current,
+			      Accepted) ->
+    AdjustedK = case not Accepted of
+    		    true -> max(1, trunc(K_Current / 1.2));
+    		    false -> K_Current + 1
+    		end,
+    {1 / max((1 + AdjustedK), 1.0), AdjustedK}.
+
 
 temperature_function_standart_sa(_OldTemperature,
 				 _OldEnergyLevel,
@@ -93,7 +136,7 @@ temperature_function_standart_sa(_OldTemperature,
 				 K_Max,
 				 K_Current,
 				 _Accepted) ->
-    {1.0 - (K_Current / K_Max), K_Current}.
+    {1.0 - (K_Current / K_Max), K_Current + 1}.
 
 get_amount_of_steps({numtests, N, _}) ->
     N;
@@ -114,18 +157,47 @@ get_temperature_function() ->
 	    fun temperature_function_standart_sa/6;
 	fast ->
 	    fun temperature_function_fast_sa/6;
+	very_fast ->
+	    fun temperature_function_fast2_sa/6;
 	Fun when is_function(Fun) ->
 	    case proplists:lookup(arity, erlang:fun_info(Fun)) of
 		{arity, 6} -> Fun;
-		_ -> fun temperature_function_standart_sa/6
+		_ ->
+		    io:format("wrong arity of configured temperature function; using default instead~n"),
+		    fun temperature_function_standart_sa/6
 	    end;
+	undefined ->
+	    fun temperature_function_standart_sa/6;
 	_ ->
+	    io:format("undefined configured temperature function; using default instead~n"),
 	    fun temperature_function_standart_sa/6
+    end.
+
+get_acceptance_function() ->
+    case get(target_sa_acceptfunc) of
+	default ->
+	    fun acceptance_function_standart/3;
+	hillclimbing ->
+	    fun acceptance_function_hillclimbing/3;
+	normalized ->
+	    fun acceptance_function_normalized/3;
+	Fun when is_function(Fun) ->
+	    case proplists:lookup(arity, erlang:fun_info(Fun)) of
+		{arity, 3} -> Fun;
+		_ ->
+		    io:format("wrong arity of configured acceptance function; using default instead~n"),
+		    fun acceptance_function_standart/3
+	    end;
+	undefined ->
+	    fun acceptance_function_standart/3;
+	_ ->
+	    io:format("undefined configured acceptance function; using default instead~n"),
+	    fun acceptance_function_standart/3
     end.
 
 init_strategy(Prop) ->
     put(target_sa_data, #sa_data{k_max = get_amount_of_steps(Prop),
-				 p = fun acceptance_function/3,
+				 p = get_acceptance_function(),
 				 temp_func = get_temperature_function()
 				}),
     Prop.
@@ -195,10 +267,6 @@ update_global_fitness(Fitness) ->
     Data = get(target_sa_data),
     K_CURRENT = (Data#sa_data.k_current),
     K_MAX = (Data#sa_data.k_max),
-    NextK = case K_CURRENT>=K_MAX of
-		true -> K_MAX;
-		false -> K_CURRENT+1
-	    end,
     %% Temperature = 1 - (K_CURRENT / K_MAX),
     Temperature = Data#sa_data.temperature,
     NewData = case (Data#sa_data.last_energy =:= null)
@@ -214,7 +282,7 @@ update_global_fitness(Fitness) ->
 									     Data#sa_data.last_energy,
 									     Fitness,
 									     K_MAX,
-									     NextK,
+									     K_CURRENT,
 									     true),
 		      Data#sa_data{state = NewState,
 				   last_energy=Fitness,
@@ -227,7 +295,7 @@ update_global_fitness(Fitness) ->
 									     Data#sa_data.last_energy,
 									     Fitness,
 									     K_MAX,
-									     NextK,
+									     K_CURRENT,
 									     false),
 		      Data#sa_data{k_current = AdjustedK, temperature = NewTemperature}
 	      end,
