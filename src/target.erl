@@ -14,7 +14,8 @@
 -spec targeted(key(), generator(), [{atom(), any()}]) -> generator().
 targeted(Key,Gen, Opts) ->
     ?SHRINK(proper_types:exactly(?LAZY(targeted_gen(Key, Gen, Opts))),
-            [?LAZY(Gen(target_strategy:shrink_gen(Opts)))]).
+            [shrink_gen(target_strategy:shrink_gen(Opts), Gen)]).
+
 
 %% @private
 targeted_gen(Key, Gen, Opts) ->
@@ -22,6 +23,10 @@ targeted_gen(Key, Gen, Opts) ->
     {NewState, NextValue} = NextFunc(State),
     target_strategy:update_target(Key, NewState),
     Gen(NextValue).
+
+shrink_gen(ShrinkType, Gen) ->
+    ?LET(X, ShrinkType,
+         ?LAZY(Gen(X))).
 
 adjust(Fitness, Threshold) ->
     set_fitness(Fitness),
