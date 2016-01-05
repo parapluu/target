@@ -21,9 +21,8 @@
 -callback init_target(options()) -> target().
 %% %% generator for shrinking
 -callback get_shrinker(options()) -> generator().
-%% store, update and retrieve state
+%% store, and retrieve state
 -callback store_target(target:key(), target_state()) -> 'ok'.
--callback update_target_state(target:key(), target_state()) -> 'ok'.
 -callback retrieve_target(target:key()) -> target() | undefined.
 %% global update
 -callback update_global_fitness(target:fitness()) -> 'ok'.
@@ -51,7 +50,8 @@ get_target(Key, Opts) ->
 
 -spec update_target(target:key(), target_state()) -> ok.
 update_target(Key, State) ->
-    (?STRATEGY):update_target_state(Key, State).
+    {_, N, F} = (?STRATEGY):retrieve_target(Key),
+    (?STRATEGY):store_target(Key, {State, N, F}).
 
 -spec update_global(target:fitness()) -> ok.
 update_global(Fitness) ->

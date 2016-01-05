@@ -12,7 +12,7 @@ enumerate_test() ->
 
 prop_enum() ->
     ?TARGET_STRATEGY(target_enumerate,
-		    ?FORALL(I, ?TARGET(X, integer(0,X)),
+		    ?FORALL(I, ?NAMED_TARGET(X, integer(0,X)),
 		     	     begin
 		     		 io:format("I: ~p~n", [I]),
 		     		 ?MAXIMIZE(I,X)
@@ -24,7 +24,7 @@ sa_test() ->
 
 prop_sa() ->
     ?TARGET_STRATEGY(target_sa,
-		     ?FORALL({I,J}, ?TARGET(Y, ?TARGET(X, exactly({X,Y}), target_sa:integer()), target_sa:integer()),
+		     ?FORALL({I,J}, {?TARGET(target_sa:integer()), ?TARGET(target_sa:integer())},
 			     begin
 				 io:format("I: ~p J: ~p~n", [I,J]),
 				 ?MAXIMIZE(-(I+J))
@@ -42,7 +42,7 @@ shrinking_test() ->
 prop_shrinking() ->
     ?TARGET_STRATEGY(target_sa,
 		     proper:numtests(1000,
-				     ?FORALL(I, ?TARGET(X, X, target_sa:integer()),
+				     ?FORALL(I, ?TARGET(target_sa:integer()),
 					     begin
 						 ?MAXIMIZE(I),
 						 check(I)
@@ -64,6 +64,4 @@ prop_shrinking() ->
 %% 		     	     begin
 %% 		     		 io:format("I: ~p S: ~p~n", [I, S]),
 %% 		     		 ?MAXIMIZE(I,X)
-%% 		     	     end)).			     
-			     
-    
+%% 		     	     end)).

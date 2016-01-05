@@ -3,7 +3,6 @@
 -export([init_strategy/1,
 	 init_target/1,
 	 store_target/2,
-	 update_target_state/2,
 	 retrieve_target/1,
 	 update_global_fitness/1,
 	 get_shrinker/1,
@@ -249,10 +248,6 @@ store_target(Key, Target) ->
     NewData = Data#sa_data{state = dict:store(Key, Target, (Data#sa_data.state))},
     put(target_sa_data, NewData),
     ok.
-
-update_target_state(Key, TargetState) ->
-    {_, N, F} = retrieve_target(Key),
-    store_target(Key, {TargetState, N, F}).
 
 retrieve_target(Key) ->
     Dict = (get(target_sa_data))#sa_data.state,

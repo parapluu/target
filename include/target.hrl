@@ -3,8 +3,11 @@
 %% include is missing. Also double includes are not ignored.
 
 %% Define a target
--define(TARGET(TargetArg, Gen, Opts), target:targeted(??TargetArg, fun(TargetArg) -> Gen end, Opts)).
--define(TARGET(TargetArg, Gen), ?TARGET(TargetArg, Gen, [])).
+-define(NAMED_TARGET(TargetArg, Gen, Opts), target:targeted(??TargetArg, fun(TargetArg) -> Gen end, Opts)).
+-define(NAMED_TARGET(TargetArg, Gen), ?NAMED_TARGET(TargetArg, Gen, [])).
+
+-define(TARGET(Opts), target:targeted(make_ref(), fun(X) -> X end, Opts)).
+-define(TARGET(), ?TARGET([])).
 
 %% Define the search
 %%   global feedback

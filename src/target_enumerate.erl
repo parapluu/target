@@ -3,7 +3,6 @@
 -export([init_strategy/1,
 	 init_target/1,
 	 store_target/2,
-	 update_target_state/2,
 	 retrieve_target/1,
 	 update_global_fitness/1,
 	 get_shrinker/1
@@ -20,12 +19,6 @@ init_target(_) ->
 
 store_target(Key, Target) ->
     NewDict = dict:store(Key, Target, get(target_enumerate_data)),
-    put(target_enumerate_data, NewDict),
-    ok.
-
-update_target_state(Key, State) ->
-    {_OldState, F1, F2} = retrieve_target(Key),
-    NewDict = dict:store(Key, {State, F1, F2}, get(target_enumerate_data)),
     put(target_enumerate_data, NewDict),
     ok.
 
