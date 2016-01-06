@@ -1,16 +1,16 @@
 -module(target_sa).
 -behaviour(target_strategy).
 -export([init_strategy/1,
-	 init_target/1,
-	 store_target/2,
-	 retrieve_target/1,
-	 update_global_fitness/1,
-	 get_shrinker/1,
-	 %% lib
-	 integer/0,
-	 integer/2,
-	 float/0,
-	 float/2]).
+         init_target/1,
+         store_target/2,
+         retrieve_target/1,
+         update_global_fitness/1,
+         get_shrinker/1,
+         %% lib
+         integer/0,
+         integer/2,
+         float/0,
+         float/2]).
 
 -include_lib("proper/include/proper_common.hrl").
 
@@ -18,36 +18,36 @@
 -type temperature() :: float().
 
 -record(sa_target, {first = null,
-		    next = null,
-		    current_generated = null,
-		    last_generated = null
-		   }).
+                    next = null,
+                    current_generated = null,
+                    last_generated = null
+                   }).
 -type sa_target() :: #sa_target{}.
 
 -record(sa_data, {state = dict:new()             :: dict:dict(target_strategy:hash(), sa_target()),
                   %% max runs
-		  k_max = 0                      :: integer(),
-		  %% run number
-		  k_current = 0                  :: integer(),
-		  %% acceptance probability
-		  p = fun (_, _, _) -> false end :: fun((float(), float(), temperature()) -> boolean()),
-		  %% energy level
-		  last_energy = null             :: float() | null,
-		  %% temperature function
-		  temperature = 1.0 :: float(),
-		  temp_func = fun(_, _, _, _, _) -> 1.0 end :: fun(( %% old temperature
-								     float(),
-								     %% old energy level
-								     float(),
-								     %% new energy level
-								     float(),
-								     %% k_current
-								     integer(),
-								     %% k_max
-								     integer(),
-								     %% accepted or not
-								     boolean()) -> {float(), integer()})
-		 }).
+                  k_max = 0                      :: integer(),
+                  %% run number
+                  k_current = 0                  :: integer(),
+                  %% acceptance probability
+                  p = fun (_, _, _) -> false end :: fun((float(), float(), temperature()) -> boolean()),
+                  %% energy level
+                  last_energy = null             :: float() | null,
+                  %% temperature function
+                  temperature = 1.0 :: float(),
+                  temp_func = fun(_, _, _, _, _) -> 1.0 end :: fun(( %% old temperature
+                                                                     float(),
+                                                                     %% old energy level
+                                                                     float(),
+                                                                     %% new energy level
+                                                                     float(),
+                                                                     %% k_current
+                                                                     integer(),
+                                                                     %% k_max
+                                                                     integer(),
+                                                                     %% accepted or not
+                                                                     boolean()) -> {float(), integer()})
+                 }).
 
 -define(DEFAULT_STEPS, 1000).
 -define(MAX_SIZE, 10000).
@@ -58,35 +58,35 @@
 
 acceptance_function_standart(EnergyCurrent, EnergyNew, Temperature) ->
     case EnergyNew > EnergyCurrent of
-	true ->
-	    %% allways accept better results
-	    true;
-	false ->
-	    %% probabilistic accepptance (allways between 0 and 0.5)
-	    AcceptancePropability  = try
-					%%  1 / (1 + math:exp(abs(EnergyCurrent - EnergyNew) / Temperature))
-					 math:exp(-(EnergyCurrent - EnergyNew) / Temperature)
-				     catch
-					 error:badarith -> 0.0
-				     end,
-	    %% if random probability is less, accept
-	    ?RANDOM_PROPABILITY < AcceptancePropability
+        true ->
+            %% allways accept better results
+            true;
+        false ->
+            %% probabilistic accepptance (allways between 0 and 0.5)
+            AcceptancePropability  = try
+                                         %%  1 / (1 + math:exp(abs(EnergyCurrent - EnergyNew) / Temperature))
+                                         math:exp(-(EnergyCurrent - EnergyNew) / Temperature)
+                                     catch
+                                         error:badarith -> 0.0
+                                     end,
+            %% if random probability is less, accept
+            ?RANDOM_PROPABILITY < AcceptancePropability
     end.
 
 acceptance_function_normalized(EnergyCurrent, EnergyNew, Temperature) ->
     case EnergyNew > EnergyCurrent of
-	true ->
-	    %% allways accept better results
-	    true;
-	false ->
-	    %% probabilistic accepptance (allways between 0 and 0.5)
-	    AcceptancePropability  = try
-					 1 / (1 + math:exp( (1 -  (EnergyNew/EnergyCurrent)) / Temperature))
-				     catch
-					 error:badarith -> 0.0
-				     end,
-	    %% if random probability is less, accept
-	    ?RANDOM_PROPABILITY < AcceptancePropability
+        true ->
+            %% allways accept better results
+            true;
+        false ->
+            %% probabilistic accepptance (allways between 0 and 0.5)
+            AcceptancePropability  = try
+                                         1 / (1 + math:exp( (1 -  (EnergyNew/EnergyCurrent)) / Temperature))
+                                     catch
+                                         error:badarith -> 0.0
+                                     end,
+            %% if random probability is less, accept
+            ?RANDOM_PROPABILITY < AcceptancePropability
     end.
 
 acceptance_function_hillclimbing(EnergyCurrent, EnergyNew, _Temperature) ->
@@ -94,47 +94,47 @@ acceptance_function_hillclimbing(EnergyCurrent, EnergyNew, _Temperature) ->
     EnergyNew > EnergyCurrent.
 
 temperature_function_fast_sa(_OldTemperature,
-			     _OldEnergyLevel,
-			     _NewEnergyLevel,
-			     _K_Max,
-			     K_Current,
-			     Accepted) ->
+                             _OldEnergyLevel,
+                             _NewEnergyLevel,
+                             _K_Max,
+                             K_Current,
+                             Accepted) ->
     AdjustedK = case not Accepted of
-    		    true ->
-			case get(target_se_reheat_counter) of
-			    undefined ->
-				put(target_se_reheat_counter, 1),
-				K_Current + 1;
-			    N when N >= ?REHEAT_THRESHOLD->
-				put(target_se_reheat_counter, 0),
-				max(1, K_Current - trunc(1.5 * ?REHEAT_THRESHOLD));
-			    N ->
-				put(target_se_reheat_counter, N + 1),
-				K_Current + 1
-			end;
-    		    false -> K_Current + 1
-    		end,
+                    true ->
+                        case get(target_se_reheat_counter) of
+                            undefined ->
+                                put(target_se_reheat_counter, 1),
+                                K_Current + 1;
+                            N when N >= ?REHEAT_THRESHOLD->
+                                put(target_se_reheat_counter, 0),
+                                max(1, K_Current - trunc(1.5 * ?REHEAT_THRESHOLD));
+                            N ->
+                                put(target_se_reheat_counter, N + 1),
+                                K_Current + 1
+                        end;
+                    false -> K_Current + 1
+                end,
     {1 / max((1 + AdjustedK), 1.0), AdjustedK}.
 
 temperature_function_fast2_sa(_OldTemperature,
-			      _OldEnergyLevel,
-			      _NewEnergyLevel,
-			      _K_Max,
-			      K_Current,
-			      Accepted) ->
+                              _OldEnergyLevel,
+                              _NewEnergyLevel,
+                              _K_Max,
+                              K_Current,
+                              Accepted) ->
     AdjustedK = case not Accepted of
-    		    true -> max(1, trunc(K_Current / 1.2));
-    		    false -> K_Current + 1
-    		end,
+                    true -> max(1, trunc(K_Current / 1.2));
+                    false -> K_Current + 1
+                end,
     {1 / max((1 + AdjustedK), 1.0), AdjustedK}.
 
 
 temperature_function_standart_sa(_OldTemperature,
-				 _OldEnergyLevel,
-				 _NewEnergyLevel,
-				 K_Max,
-				 K_Current,
-				 _Accepted) ->
+                                 _OldEnergyLevel,
+                                 _NewEnergyLevel,
+                                 K_Max,
+                                 K_Current,
+                                 _Accepted) ->
     {1.0 - (K_Current / K_Max), K_Current + 1}.
 
 get_amount_of_steps({numtests, N, _}) ->
@@ -146,59 +146,73 @@ get_amount_of_steps({on_output, _, Prop}) ->
 get_amount_of_steps(_) ->
     N = get(target_sa_steps),
     case is_integer(N) of
-	true -> N;
-	_ -> ?DEFAULT_STEPS
+        true -> N;
+        _ -> ?DEFAULT_STEPS
     end.
 
 get_temperature_function() ->
+    io:format("Temperature Function: \t"),
     case get(target_sa_tempfunc) of
-	default ->
-	    fun temperature_function_standart_sa/6;
-	fast ->
-	    fun temperature_function_fast_sa/6;
-	very_fast ->
-	    fun temperature_function_fast2_sa/6;
-	Fun when is_function(Fun) ->
-	    case proplists:lookup(arity, erlang:fun_info(Fun)) of
-		{arity, 6} -> Fun;
-		_ ->
-		    io:format("wrong arity of configured temperature function; using default instead~n"),
-		    fun temperature_function_standart_sa/6
-	    end;
-	undefined ->
-	    fun temperature_function_standart_sa/6;
-	_ ->
-	    io:format("undefined configured temperature function; using default instead~n"),
-	    fun temperature_function_standart_sa/6
+        default ->
+            io:format("default~n"),
+            fun temperature_function_standart_sa/6;
+        fast ->
+            io:format("fast~n"),
+            fun temperature_function_fast_sa/6;
+        very_fast ->
+            io:format("very fast~n"),
+            fun temperature_function_fast2_sa/6;
+        Fun when is_function(Fun) ->
+            case proplists:lookup(arity, erlang:fun_info(Fun)) of
+                {arity, 6} ->
+                    io:format("configured ~p~n", [Fun]),
+                    Fun;
+                _ ->
+                    io:format("wrong arity of configured temperature function; using default instead~n"),
+                    fun temperature_function_standart_sa/6
+            end;
+        undefined ->
+            fun temperature_function_standart_sa/6;
+        _ ->
+            io:format("undefined configured temperature function; using default instead~n"),
+            fun temperature_function_standart_sa/6
     end.
 
 get_acceptance_function() ->
+    io:format("Acceptance Function: \t"),
     case get(target_sa_acceptfunc) of
-	default ->
-	    fun acceptance_function_standart/3;
-	hillclimbing ->
-	    fun acceptance_function_hillclimbing/3;
-	normalized ->
-	    fun acceptance_function_normalized/3;
-	Fun when is_function(Fun) ->
-	    case proplists:lookup(arity, erlang:fun_info(Fun)) of
-		{arity, 3} -> Fun;
-		_ ->
-		    io:format("wrong arity of configured acceptance function; using default instead~n"),
-		    fun acceptance_function_standart/3
-	    end;
-	undefined ->
-	    fun acceptance_function_standart/3;
-	_ ->
-	    io:format("undefined configured acceptance function; using default instead~n"),
-	    fun acceptance_function_standart/3
+        default ->
+            io:format("default~n"),
+            fun acceptance_function_standart/3;
+        hillclimbing ->
+            io:format("hillclimbing~n"),
+            fun acceptance_function_hillclimbing/3;
+        normalized ->
+            io:format("normalized~n"),
+            fun acceptance_function_normalized/3;
+        Fun when is_function(Fun) ->
+            case proplists:lookup(arity, erlang:fun_info(Fun)) of
+                {arity, 3} ->
+                    io:format("configured ~p~n", [Fun]),
+                    Fun;
+                _ ->
+                    io:format("wrong arity of configured acceptance function; using default instead~n"),
+                    fun acceptance_function_standart/3
+            end;
+        undefined ->
+            io:format("default~n"),
+            fun acceptance_function_standart/3;
+        _ ->
+            io:format("undefined configured acceptance function; using default instead~n"),
+            fun acceptance_function_standart/3
     end.
 
 init_strategy(Prop) ->
+    io:format("-- Simulated Anneahling Search Strategy --~n"),
     put(target_sa_data, #sa_data{k_max = get_amount_of_steps(Prop),
-				 p = get_acceptance_function(),
-				 temp_func = get_temperature_function()
-				}),
+                                 p = get_acceptance_function(),
+                                 temp_func = get_temperature_function()
+                                }),
     Prop.
 
 init_target([]) ->
@@ -239,8 +253,8 @@ parse_opts([Opt|T], Opts) ->
 
 parse_opt(Opt, Opts) ->
     case Opt of
-	{first, G} -> Opts#sa_target{first = G};
-	{next, G} ->  Opts#sa_target{next = G}
+        {first, G} -> Opts#sa_target{first = G};
+        {next, G} ->  Opts#sa_target{next = G}
     end.
 
 store_target(Key, Target) ->
@@ -252,10 +266,10 @@ store_target(Key, Target) ->
 retrieve_target(Key) ->
     Dict = (get(target_sa_data))#sa_data.state,
     case dict:is_key(Key, Dict) of
-	true ->
-	    dict:fetch(Key, Dict);
-	false ->
-	    undefined
+        true ->
+            dict:fetch(Key, Dict);
+        false ->
+            undefined
     end.
 
 update_global_fitness(Fitness) ->
@@ -265,35 +279,35 @@ update_global_fitness(Fitness) ->
     %% Temperature = 1 - (K_CURRENT / K_MAX),
     Temperature = Data#sa_data.temperature,
     NewData = case (Data#sa_data.last_energy =:= null)
-		  orelse
-		  (Data#sa_data.p)(Data#sa_data.last_energy,
-				   Fitness,
-				   Temperature) of
-		  true ->
-		      %% accept new state
-		      NewState = update_all_targets(Data#sa_data.state),
-		      %% calculate new temperature
-		      {NewTemperature, AdjustedK} = (Data#sa_data.temp_func)(Temperature,
-									     Data#sa_data.last_energy,
-									     Fitness,
-									     K_MAX,
-									     K_CURRENT,
-									     true),
-		      Data#sa_data{state = NewState,
-				   last_energy=Fitness,
-				   k_current = AdjustedK,
-				   temperature = NewTemperature};
-		  false ->
-		      %% reject new state
-		      %% calculate new temperature
-		      {NewTemperature, AdjustedK} = (Data#sa_data.temp_func)(Temperature,
-									     Data#sa_data.last_energy,
-									     Fitness,
-									     K_MAX,
-									     K_CURRENT,
-									     false),
-		      Data#sa_data{k_current = AdjustedK, temperature = NewTemperature}
-	      end,
+                  orelse
+                  (Data#sa_data.p)(Data#sa_data.last_energy,
+                                   Fitness,
+                                   Temperature) of
+                  true ->
+                      %% accept new state
+                      NewState = update_all_targets(Data#sa_data.state),
+                      %% calculate new temperature
+                      {NewTemperature, AdjustedK} = (Data#sa_data.temp_func)(Temperature,
+                                                                             Data#sa_data.last_energy,
+                                                                             Fitness,
+                                                                             K_MAX,
+                                                                             K_CURRENT,
+                                                                             true),
+                      Data#sa_data{state = NewState,
+                                   last_energy=Fitness,
+                                   k_current = AdjustedK,
+                                   temperature = NewTemperature};
+                  false ->
+                      %% reject new state
+                      %% calculate new temperature
+                      {NewTemperature, AdjustedK} = (Data#sa_data.temp_func)(Temperature,
+                                                                             Data#sa_data.last_energy,
+                                                                             Fitness,
+                                                                             K_MAX,
+                                                                             K_CURRENT,
+                                                                             false),
+                      Data#sa_data{k_current = AdjustedK, temperature = NewTemperature}
+              end,
     put(target_sa_data, NewData),
     ok.
 
@@ -307,7 +321,7 @@ update_all_targets(Dict, [K|T]) ->
     FF = dict:fetch(K, Dict),
     {S, N, F} = FF,
     update_all_targets(dict:store(K, {S#sa_target{ last_generated = S#sa_target.current_generated }, N, F}, Dict),
-		       T).
+                       T).
 
 get_shrinker(Opts) ->
     ((parse_opts(Opts))#sa_target.first).
@@ -322,15 +336,15 @@ integer(L, R) ->
 
 integer_next(L, R) ->
     fun (OldInstance, Temperature) ->
-	    {LL, LR} = case L=:=inf orelse R=:=inf of
-			   true ->
-			       {inf, inf};
-			   false ->
-			       Limit = trunc(abs(L - R) * Temperature * 0.1) + 1,
-			       {-Limit, Limit}
-		       end,
-	    ?LET(X, proper_types:integer(LL, LR),
-		 make_inrange(X + OldInstance, L, R))
+            {LL, LR} = case L=:=inf orelse R=:=inf of
+                           true ->
+                               {inf, inf};
+                           false ->
+                               Limit = trunc(abs(L - R) * Temperature * 0.1) + 1,
+                               {-Limit, Limit}
+                       end,
+            ?LET(X, proper_types:integer(LL, LR),
+                 make_inrange(X + OldInstance, L, R))
     end.
 
 float() ->
@@ -342,15 +356,15 @@ float(L, R) ->
 
 float_next(L, R) ->
     fun (OldInstance, Temperature) ->
-	    {LL, LR} = case L=:=inf orelse R=:=inf of
-			   true ->
-			       {inf, inf};
-			   false ->
-			       Limit = abs(L - R) * Temperature * 0.1,
-			       {-Limit, Limit}
-		       end,
-	    ?LET(X, proper_types:float(LL, LR),
-		 make_inrange(X+OldInstance, L, R))
+            {LL, LR} = case L=:=inf orelse R=:=inf of
+                           true ->
+                               {inf, inf};
+                           false ->
+                               Limit = abs(L - R) * Temperature * 0.1,
+                               {-Limit, Limit}
+                       end,
+            ?LET(X, proper_types:float(LL, LR),
+                 make_inrange(X+OldInstance, L, R))
     end.
 
 make_inrange(Val, L, R) when (R=:=inf orelse Val =< R) andalso (L=:=inf orelse Val >= L) -> Val;
