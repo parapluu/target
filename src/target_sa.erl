@@ -56,7 +56,7 @@
 -define(RANDOM_PROPABILITY, (fun ({ok, V}) -> V end((proper_gen:pick(proper_types:float(0.0,1.0)))))).
 
 
-acceptance_function_standart(EnergyCurrent, EnergyNew, Temperature) ->
+acceptance_function_standard(EnergyCurrent, EnergyNew, Temperature) ->
     case EnergyNew > EnergyCurrent of
         true ->
             %% allways accept better results
@@ -129,7 +129,7 @@ temperature_function_fast2_sa(_OldTemperature,
     {1 / max((1 + AdjustedK), 1.0), AdjustedK}.
 
 
-temperature_function_standart_sa(_OldTemperature,
+temperature_function_standard_sa(_OldTemperature,
                                  _OldEnergyLevel,
                                  _NewEnergyLevel,
                                  K_Max,
@@ -155,7 +155,7 @@ get_temperature_function() ->
     case get(target_sa_tempfunc) of
         default ->
             io:format("default~n"),
-            fun temperature_function_standart_sa/6;
+            fun temperature_function_standard_sa/6;
         fast ->
             io:format("fast~n"),
             fun temperature_function_fast_sa/6;
@@ -169,13 +169,13 @@ get_temperature_function() ->
                     Fun;
                 _ ->
                     io:format("wrong arity of configured temperature function; using default instead~n"),
-                    fun temperature_function_standart_sa/6
+                    fun temperature_function_standard_sa/6
             end;
         undefined ->
-            fun temperature_function_standart_sa/6;
+            fun temperature_function_standard_sa/6;
         _ ->
             io:format("undefined configured temperature function; using default instead~n"),
-            fun temperature_function_standart_sa/6
+            fun temperature_function_standard_sa/6
     end.
 
 get_acceptance_function() ->
@@ -183,7 +183,7 @@ get_acceptance_function() ->
     case get(target_sa_acceptfunc) of
         default ->
             io:format("default~n"),
-            fun acceptance_function_standart/3;
+            fun acceptance_function_standard/3;
         hillclimbing ->
             io:format("hillclimbing~n"),
             fun acceptance_function_hillclimbing/3;
@@ -197,14 +197,14 @@ get_acceptance_function() ->
                     Fun;
                 _ ->
                     io:format("wrong arity of configured acceptance function; using default instead~n"),
-                    fun acceptance_function_standart/3
+                    fun acceptance_function_standard/3
             end;
         undefined ->
             io:format("default~n"),
-            fun acceptance_function_standart/3;
+            fun acceptance_function_standard/3;
         _ ->
             io:format("undefined configured acceptance function; using default instead~n"),
-            fun acceptance_function_standart/3
+            fun acceptance_function_standard/3
     end.
 
 init_strategy(Prop) ->
@@ -344,7 +344,7 @@ integer_next(L, R) ->
                                {-Limit, Limit}
                        end,
             ?LET(X, proper_types:integer(LL, LR),
-                 make_inrange(X + OldInstance, L, R))
+                 make_inrange(OldInstance, X, L, R))
     end.
 
 float() ->
@@ -364,9 +364,13 @@ float_next(L, R) ->
                                {-Limit, Limit}
                        end,
             ?LET(X, proper_types:float(LL, LR),
-                 make_inrange(X+OldInstance, L, R))
+                 make_inrange(OldInstance, X, L, R))
     end.
 
 make_inrange(Val, L, R) when (R=:=inf orelse Val =< R) andalso (L=:=inf orelse Val >= L) -> Val;
 make_inrange(Val, L, _R) when Val < L -> L;
 make_inrange(Val, _L, R) when Val > R -> R.
+
+make_inrange(Val, Offset, L, R) when L=/=inf andalso Val + Offset < L -> make_inrange(Val - Offset, L, R);
+make_inrange(Val, Offset, L, R) when R=/=inf andalso Val + Offset > R -> make_inrange(Val - Offset, L, R);
+make_inrange(Val, Offset, L, R) -> make_inrange(Val + Offset, L, R).
