@@ -51,7 +51,7 @@
 
 -define(DEFAULT_STEPS, 1000).
 -define(MAX_SIZE, 10000).
--define(REHEAT_THRESHOLD, 25).
+-define(REHEAT_THRESHOLD, 5).
 
 -define(RANDOM_PROPABILITY, (fun ({ok, V}) -> V end((proper_gen:pick(proper_types:float(0.0,1.0)))))).
 
@@ -107,14 +107,14 @@ temperature_function_fast_sa(_OldTemperature,
                                 K_Current + 1;
                             N when N >= ?REHEAT_THRESHOLD->
                                 put(target_se_reheat_counter, 0),
-                                max(1, K_Current - trunc(1.5 * ?REHEAT_THRESHOLD));
+                                max(1, K_Current - trunc(1.4 * ?REHEAT_THRESHOLD));
                             N ->
                                 put(target_se_reheat_counter, N + 1),
                                 K_Current + 1
                         end;
                     false -> K_Current + 1
                 end,
-    {1 / max((1 + AdjustedK), 1.0), AdjustedK}.
+    {1 / max((AdjustedK / 4.0), 1.0), AdjustedK}.
 
 temperature_function_fast2_sa(_OldTemperature,
                               _OldEnergyLevel,
@@ -123,11 +123,46 @@ temperature_function_fast2_sa(_OldTemperature,
                               K_Current,
                               Accepted) ->
     AdjustedK = case not Accepted of
-                    true -> max(1, trunc(K_Current / 1.2));
+                    true -> max(1, trunc(K_Current / 1.1));
                     false -> K_Current + 1
                 end,
-    {1 / max((1 + AdjustedK), 1.0), AdjustedK}.
+    {1 / max(AdjustedK, 1.0), AdjustedK}.
 
+temperature_function_reheat_sa(OldTemperature,
+                               OldEnergyLevel,
+                               NewEnergyLevel,
+                               K_Max,
+                               K_Current,
+                               Accepted) when is_integer(K_Current)->
+    temperature_function_reheat_sa(OldTemperature,
+                                   OldEnergyLevel,
+                                   NewEnergyLevel,
+                                   K_Max,
+                                   {K_Current, K_Current},
+                                   Accepted);
+temperature_function_reheat_sa(_OldTemperature,
+                               _OldEnergyLevel,
+                               _NewEnergyLevel,
+                               K_Max,
+                               {K_Current, K_Counter},
+                               Accepted) ->
+    Scaling = 1.0 - (K_Counter / K_Max),
+    AdjustedK = case not Accepted of
+                    true ->
+                        case get(target_se_reheat_counter) of
+                            undefined ->
+                                put(target_se_reheat_counter, 1),
+                                K_Current + 1;
+                            N when N >= ?REHEAT_THRESHOLD->
+                                put(target_se_reheat_counter, 0),
+                                max(1, K_Current - trunc(Scaling * 5 * ?REHEAT_THRESHOLD));
+                            N ->
+                                put(target_se_reheat_counter, N + 1),
+                                K_Current + 1
+                        end;
+                    false -> K_Current + 1
+                end,
+    {1 / max((AdjustedK / 4.0), 1.0), {AdjustedK, K_Counter + 1}}.
 
 temperature_function_standard_sa(_OldTemperature,
                                  _OldEnergyLevel,
@@ -162,6 +197,9 @@ get_temperature_function() ->
         very_fast ->
             io:format("very fast~n"),
             fun temperature_function_fast2_sa/6;
+        reheat ->
+            io:format("decreasing reheating~n"),
+            fun temperature_function_reheat_sa/6;
         Fun when is_function(Fun) ->
             case proplists:lookup(arity, erlang:fun_info(Fun)) of
                 {arity, 6} ->
