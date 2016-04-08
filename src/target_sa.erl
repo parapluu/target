@@ -123,7 +123,7 @@ temperature_function_fast2_sa(_OldTemperature,
                               K_Current,
                               Accepted) ->
     AdjustedK = case not Accepted of
-                    true -> max(1, trunc(K_Current / 1.1));
+                    true -> max(1, trunc(K_Current / 1.2));
                     false -> K_Current + 1
                 end,
     {1 / max(AdjustedK, 1.0), AdjustedK}.
@@ -210,6 +210,7 @@ get_temperature_function() ->
                     fun temperature_function_standard_sa/6
             end;
         undefined ->
+            io:format("default~n"),
             fun temperature_function_standard_sa/6;
         _ ->
             io:format("undefined configured temperature function; using default instead~n"),
@@ -276,6 +277,7 @@ next_func(State) ->
     MaxSize = trunc(?MAX_SIZE * Temperature) + 1,
     %% io:format("MaxSize: ~p Temperature: ~p ~n", [MaxSize, Temperature]),
     %% getting the generator for the next element (dependend on size and the last generated element)
+    %% io:format("~p  -- ~p ~n", [State#sa_target.last_generated, State#sa_target.next]),
     NextGenerator = (State#sa_target.next)(State#sa_target.last_generated, Temperature),
     %% generate the next element
     {ok, Generated} = proper_gen:pick(NextGenerator, MaxSize),
