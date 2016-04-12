@@ -53,7 +53,7 @@
 -define(MAX_SIZE, 10000).
 -define(REHEAT_THRESHOLD, 5).
 
--define(RANDOM_PROPABILITY, (fun ({ok, V}) -> V end((proper_gen:pick(proper_types:float(0.0,1.0)))))).
+-define(RANDOM_PROPABILITY, (random:uniform())).
 
 
 acceptance_function_standard(EnergyCurrent, EnergyNew, Temperature) ->
@@ -260,7 +260,7 @@ init_target(Opts) ->
     create_target(parse_opts(Opts)).
 
 create_target(TargetState) ->
-    {ok, InitialValue} = proper_gen:pick((TargetState#sa_target.first), 1),
+    {ok, InitialValue} = proper_gen:clean_instance(proper_gen:safe_generate(TargetState#sa_target.first)),
     {TargetState#sa_target{last_generated = InitialValue },
      fun next_func/1,
      %% dummy local fitness function
@@ -274,13 +274,13 @@ next_func(State) ->
     GlobalData = get(target_sa_data),
     Temperature = GlobalData#sa_data.temperature,
     %% calculating the max generated size
-    MaxSize = trunc(?MAX_SIZE * Temperature) + 1,
+    %% MaxSize = trunc(?MAX_SIZE * Temperature) + 1,
     %% io:format("MaxSize: ~p Temperature: ~p ~n", [MaxSize, Temperature]),
     %% getting the generator for the next element (dependend on size and the last generated element)
     %% io:format("~p  -- ~p ~n", [State#sa_target.last_generated, State#sa_target.next]),
     NextGenerator = (State#sa_target.next)(State#sa_target.last_generated, Temperature),
     %% generate the next element
-    {ok, Generated} = proper_gen:pick(NextGenerator, MaxSize),
+    {ok, Generated} = proper_gen:clean_instance(proper_gen:safe_generate(NextGenerator)),
     %% return according to interface
     {State#sa_target{current_generated = Generated}, Generated}.
 
@@ -348,7 +348,9 @@ update_global_fitness(Fitness) ->
                                                                              false),
                       Data#sa_data{k_current = AdjustedK, temperature = NewTemperature}
               end,
+    %% io:format("~p~n", [Data]),
     put(target_sa_data, NewData),
+    %% timer:sleep(100),
     ok.
 
 update_all_targets(TargetDict) ->

@@ -10,9 +10,18 @@
                      {fun is_atom_type/1, fun atom_gen_sa/1},
                      {fun is_vector_type/1, fun vector_gen_sa/1},
                      {fun is_binary_type/1, fun binary_gen_sa/1},
-                     {fun is_binary_len_type/1, fun binary_len_gen_sa/1}]).
+                     {fun is_binary_len_type/1, fun binary_len_gen_sa/1},
+                     {fun is_let_type/1, fun let_gen_sa/1}]).
 
 from_proper_generator(Generator) ->
+    ok = case get(target_sa_gen_cache) of
+             undefined ->
+                 put(target_sa_gen_cache, #{}),
+                 ok;
+             _ ->
+                 %% use existing cache
+                 ok
+         end,
     Hash = erlang:phash2(Generator),
     case get(?STORRAGE) of
         undefined ->
@@ -69,14 +78,14 @@ is_integer_type(Type) ->
 integer_gen_sa({'$type', TypeProps}) ->
     {env, {Min, Max}} = proplists:lookup(env, TypeProps),
     fun (Base, Temp) ->
-            {OffsetMin, OffsetMax} = case Min=:=inf orelse Max=:=inf of
-                                         true ->
-                                             {trunc(-1000 * Temp), trunc(1000 * Temp)};
-                                         false ->
-                                             Limit = trunc(abs(Min - Max) * Temp * 0.1) + 1,
-                                             {-Limit, Limit}
-                                     end,
-            Offset = proper_arith:rand_int(OffsetMin, OffsetMax),
+            OffsetLimit = case Min=:=inf orelse Max=:=inf of
+                              true ->
+                                  trunc(1000 * Temp);
+                              false ->
+                                  Limit = trunc(abs(Min - Max) * Temp * 0.1) + 1,
+                                  Limit
+                          end,
+            Offset = proper_arith:rand_int(-OffsetLimit, OffsetLimit),
             make_inrange(Base, Offset, Min, Max)
     end.
 
@@ -103,7 +112,6 @@ is_list_type(Type) ->
     has_same_generator(Type, proper_types:list(proper_types:atom())).
 
 list_choice(empty, Temp) ->
-    proper_arith:rand_reseed(),
     C = random:uniform(),
     C_Add = 0.5 * Temp,
     Choice = if
@@ -113,7 +121,6 @@ list_choice(empty, Temp) ->
     %% io:format("ChoiceE: ~p ~n", [C]),
     Choice;
 list_choice(list, Temp) ->
-    proper_arith:rand_reseed(),
     C = random:uniform(),
     C_Add =          0.2 * Temp,
     C_Del = C_Add + (0.1 * Temp),
@@ -127,7 +134,6 @@ list_choice(list, Temp) ->
     %% io:format("ChoiceL: ~p ~n", [C]),
     Choice;
 list_choice(vector, Temp) ->
-    proper_arith:rand_reseed(),
     C = random:uniform(),
     C_Mod =          0.4 * Temp,
     Choice = if
@@ -146,7 +152,7 @@ list_gen_sa(Type) ->
             %% chance to add an element
             case list_choice(empty, Temp) of
                 add ->
-                    {ok, New} = proper_gen:pick(InternalType),
+                    {ok, New} = proper_gen:clean_instance(proper_gen:safe_generate(InternalType)),
                     [New | GEN([], Temp)];
                 nothing -> []
             end;
@@ -156,7 +162,7 @@ list_gen_sa(Type) ->
             %% chance to add element infront of current element
             case list_choice(list, Temp) of
                 add ->
-                    {ok, New} = proper_gen:pick(InternalType),
+                    {ok, New} = proper_gen:clean_instance(proper_gen:safe_generate(InternalType)),
                     [New | GEN(L, Temp)];
                 del ->
                     GEN(T, Temp);
@@ -255,6 +261,47 @@ tuple_gen_sa(Type) ->
 %% utility functions
 
 %% let
+is_let_type({'$type', Props}) ->
+    {kind, constructed} =:= proplists:lookup(kind, Props) andalso
+        {shrink_to_parts, false} =:= proplists:lookup(shrink_to_parts, Props);
+is_let_type(_) ->
+    false.
+
+get_cached_let(Type, Combined) ->
+    Key = erlang:phash2({Type, Combined}),
+    case get(target_sa_gen_cache) of
+        #{Key := Base} -> {ok, Base};
+        _ -> not_found
+    end.
+
+set_cache_let(Type, Base, Combined) ->
+    Key = erlang:phash2({Type, Combined}),
+    M = get(target_sa_gen_cache),
+    put(target_sa_gen_cache, M#{Key => Base}).
+
+let_gen_sa(Type) ->
+    Combine = get_combine(Type),
+    PartsType = get_parts_type(Type),
+    {next, PartsGen} = proplists:lookup(next, from_proper_generator(PartsType)),
+    fun (Base, Temp) ->
+            Modified = case get_cached_let(Type, Base) of
+                           {ok, Stored} ->
+                               PartsGen(Stored, Temp);
+                           not_found ->
+                               %% first time running the let
+                               {ok, Generated} = proper_gen:clean_instance(proper_gen:safe_generate(PartsType)),
+                               Generated
+                       end,
+            Combined = Combine(Modified),
+            set_cache_let(Type, Modified, Combined),
+            case is_type(Combined) of
+                true ->
+                    {next, InternalGen} = proplists:lookup(next, from_proper_generator(Combined)),
+                    InternalGen(Base, Temp);
+                false ->
+                    Combined
+            end
+    end.
 
 %% lazy
 
@@ -268,12 +315,15 @@ tuple_gen_sa(Type) ->
 
 %% suchthatmaybe
 
+%% utility
 
+is_type({'$type', _}) -> true;
+is_type(_) -> false.
 
 get_internal_type({'$type', TypeProperties}) ->
     case proplists:lookup(internal_type, TypeProperties) of
         {internal_type, Type} -> Type;
-        _ -> no_internal_type
+        _ -> throw(no_internal_type)
     end;
 get_internal_type(_) ->
     not_a_type.
@@ -281,7 +331,7 @@ get_internal_type(_) ->
 get_internal_types({'$type', TypeProperties}) ->
     case proplists:lookup(internal_types, TypeProperties) of
         {internal_types, Types} -> tuple_to_list(Types);
-        _ -> no_internal_types
+        _ -> throw(no_internal_types)
     end;
 get_internal_types(_) ->
     not_a_type.
@@ -296,6 +346,24 @@ get_length({'$type', TypeProperties}) ->
     end;
 get_length(_) ->
     not_a_type.
+
+get_combine({'$type', TypeProperties}) ->
+    case proplists:lookup(combine, TypeProperties) of
+        {combine, Combine} -> Combine;
+        _ -> throw(no_combine)
+    end;
+get_combine(_) ->
+    not_a_type.
+
+get_parts_type({'$type', TypeProperties}) ->
+    case proplists:lookup(parts_type, TypeProperties) of
+        {parts_type, Type} -> Type;
+        _ -> throw(no_parts_type)
+    end;
+get_parts_type(_) ->
+    not_a_type.
+
+
 
 dont_change(X) ->
     fun (_, _) -> X end.
