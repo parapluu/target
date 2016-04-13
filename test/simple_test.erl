@@ -33,11 +33,11 @@ prop_sa() ->
 
 
 check(I) ->
-     I < 100000.
+     I < 1000.
 
 shrinking_test() ->
     false = proper:quickcheck(prop_shrinking(), [{to_file, user}, {numtests, 1000}]),
-    [100000] = proper:counterexample().
+    [1000] = proper:counterexample().
 
 prop_shrinking() ->
     ?TARGET_STRATEGY(target_sa,

@@ -29,7 +29,9 @@ from_proper_generator(Generator) ->
         M ->
             put(?STORRAGE, M#{ Hash => #{} })
     end,
-    [{first, Generator}, {next, replace_generators(Generator, Hash)}].
+    UnrestrictedGenerator = replace_generators(Generator, Hash),
+    RestrictedGenerator = apply_constraints(UnrestrictedGenerator, Generator),
+    [{first, Generator}, {next, RestrictedGenerator}].
 
 replace_generators(Gen, _Hash) ->
     case get_replacer(Gen) of
@@ -38,7 +40,7 @@ replace_generators(Gen, _Hash) ->
             Replacer(Gen);
         _ ->
             %% fallback
-            io:format("Fallback using regular generator instead~n"),
+            io:format("Fallback using regular generator instead: ~p~n", [Gen]),
             fun (_, _) -> Gen end
     end.
 
@@ -59,6 +61,28 @@ has_same_generator({'$type', LTP}, {'$type', RTP}) ->
     LG=/=none andalso LG=:=RG;
 has_same_generator(_, _) ->
     false.
+
+apply_constraints(UnrestrictedGenerator, Type) ->
+    fun (Base, Temp) ->
+            Tries = get('$constraint_tries'),
+            restrict_generation(UnrestrictedGenerator, Base, Temp, Tries, Type, none)
+    end.
+
+restrict_generation(_, _, _, 0, _, none) -> throw(cannot_satisfy_constraint);
+restrict_generation(_, _, _, 0, _, {ok, WeakInstance}) -> WeakInstance;
+restrict_generation(Gen, B, T, TriesLeft, Type, WeakInstance) ->
+    Instance = Gen(B, T),
+    case proper_types:satisfies_all(Instance, Type) of
+        {true, true} ->
+            %% strong
+            Instance;
+        {true, _} ->
+            %% weak
+            restrict_generation(Gen, B, T, TriesLeft - 1, Type, {ok, Instance});
+        _ ->
+            %% not at all
+            restrict_generation(Gen, B, T, TriesLeft - 1, Type, WeakInstance)
+    end.
 
 %% Numbers
 
@@ -152,6 +176,7 @@ list_gen_sa(Type) ->
             %% chance to add an element
             case list_choice(empty, Temp) of
                 add ->
+                    io:format("it: ~p~n", [InternalType]),
                     {ok, New} = proper_gen:clean_instance(proper_gen:safe_generate(InternalType)),
                     [New | GEN([], Temp)];
                 nothing -> []
@@ -172,6 +197,8 @@ list_gen_sa(Type) ->
                     [H | GEN(T, Temp)]
             end
     end.
+
+%% TODO: shrink_list, loose_tuple, fixed_list?
 
 %% vector
 is_vector_type(Type) ->
@@ -311,10 +338,6 @@ let_gen_sa(Type) ->
 
 %% letshrink
 
-%% suchthat
-
-%% suchthatmaybe
-
 %% utility
 
 is_type({'$type', _}) -> true;
@@ -362,8 +385,6 @@ get_parts_type({'$type', TypeProperties}) ->
     end;
 get_parts_type(_) ->
     not_a_type.
-
-
 
 dont_change(X) ->
     fun (_, _) -> X end.
