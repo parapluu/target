@@ -7,7 +7,9 @@
           let_test/0,
           graph_test/0,
           suchthat_test/0,
-          simple_graph/0]).
+          union_test/0,
+          tuple_test/0,
+          edge_test/0]).
 
 -include_lib("proper/include/proper.hrl").
 -include_lib("target/include/target.hrl").
@@ -79,9 +81,36 @@ prop_suchthat() ->
 suchthat_test() ->
     true = proper:quickcheck(prop_suchthat(), [{to_file, user}, {numtests, 1000}]).
 
+prop_union() ->
+    ?FORALL_SA(X, ?TARGET(target_sa_gen:from_proper_generator(proper_types:union([a,b,c]))),
+               lists:member(X, [a,b,c])).
+
+union_test() ->
+    true = proper:quickcheck(prop_union(), [{to_file, user}, {numtests, 1000}]).
+
+tuple_type() ->
+    proper_types:tuple([integer(), integer()]).
+
+tuple_type_res() ->
+    ?SUCHTHAT({V1, V2}, tuple_type(), V1>V2).
+
+prop_tuple() ->
+    ?FORALL_SA({L, R}, ?TARGET(target_sa_gen:from_proper_generator(tuple_type_res())),
+               L>R).
+
+tuple_test() ->
+    true = proper:quickcheck(prop_tuple(), [{to_file, user}, {numtests, 1000}]).
+
 %% simple generator for a graph
 simple_edge(V) ->
     ?SUCHTHAT({V1, V2}, {oneof(V), oneof(V)}, V1>V2).
+
+prop_edge() ->
+    ?FORALL_SA({L, R}, ?TARGET(target_sa_gen:from_proper_generator(simple_edge([1,2,3,4,5,6,7,8,9]))),
+               L>R).
+
+edge_test() ->
+    true = proper:quickcheck(prop_edge(), [{to_file, user}, {numtests, 1000}]).
 
 simple_edges(V) ->
     ?LET(Edges, list(simple_edge(V)),
@@ -104,10 +133,11 @@ simple_graph() ->
 
 prop_graph() ->
     ?FORALL_SA({V, E}, ?TARGET(target_sa_gen:from_proper_generator(simple_graph())),
-    begin
-            io:format("V, E = ~p ~p~n", [V, E]),
-            true
-    end).
+               begin
+                       ?MAXIMIZE(length(V)-length(E)),
+                   io:format("V, E = ~p ~p~n", [V, E]),
+                   true
+               end).
 
 graph_test() ->
-    true = proper:quickcheck(prop_graph(), [{to_file, user}, {numtests, 100}]).
+    true = proper:quickcheck(prop_graph(), [{to_file, user}, {numtests, 1000}]).
