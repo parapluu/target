@@ -24,7 +24,7 @@
                    }).
 -type sa_target() :: #sa_target{}.
 
--record(sa_data, {state = dict:new()             :: dict:dict(target_strategy:hash(), sa_target()),
+-record(sa_data, {state = dict:new()             :: dict:dict(target:key(), sa_target()),
                   %% max runs
                   k_max = 0                      :: integer(),
                   %% run number
@@ -252,6 +252,7 @@ get_acceptance_function() ->
             fun acceptance_function_standard/3
     end.
 
+-spec init_strategy(proper:outer_test()) -> proper:outer_test().
 init_strategy(Prop) ->
     io:format("-- Simulated Anneahling Search Strategy --~n"),
     put(target_sa_data, #sa_data{k_max = get_amount_of_steps(Prop),
@@ -260,6 +261,7 @@ init_strategy(Prop) ->
                                 }),
     Prop.
 
+-spec init_target(target_strategy:options()) -> target_strategy:target().
 init_target([]) ->
     init_target(?MODULE:integer());
 init_target(Opts) ->
@@ -271,8 +273,6 @@ create_target(TargetState) ->
      fun next_func/1,
      %% dummy local fitness function
      fun (S, _) -> S end}.
-
-
 
 %% generating next element and updating the target state
 next_func(State) ->
@@ -303,12 +303,14 @@ parse_opt(Opt, Opts) ->
         {next, G} ->  Opts#sa_target{next = G}
     end.
 
+-spec store_target(target:key(), target_strategy:target()) -> 'ok'.
 store_target(Key, Target) ->
     Data = get(target_sa_data),
     NewData = Data#sa_data{state = dict:store(Key, Target, (Data#sa_data.state))},
     put(target_sa_data, NewData),
     ok.
 
+-spec retrieve_target(target:key()) -> target_strategy:target().
 retrieve_target(Key) ->
     Dict = (get(target_sa_data))#sa_data.state,
     case dict:is_key(Key, Dict) of
@@ -318,6 +320,7 @@ retrieve_target(Key) ->
             undefined
     end.
 
+-spec update_global_fitness(target:fitness()) -> 'ok'.
 update_global_fitness(Fitness) ->
     Data = get(target_sa_data),
     K_CURRENT = (Data#sa_data.k_current),
@@ -372,6 +375,7 @@ update_all_targets(Dict, [K|T]) ->
     update_all_targets(dict:store(K, {S#sa_target{ last_generated = S#sa_target.current_generated }, N, F}, Dict),
                        T).
 
+-spec get_shrinker(target_strategy:options()) -> proper_types:type().
 get_shrinker(Opts) ->
     ((parse_opts(Opts))#sa_target.first).
 

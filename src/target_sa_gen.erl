@@ -1,5 +1,5 @@
 -module (target_sa_gen).
--compile(export_all).
+-export([from_proper_generator/1]).
 
 -define(STORRAGE, target_sa_gen_storrage).
 
@@ -21,6 +21,7 @@
 -define(TEMP(T), calculate_temperature(T)).
 -define(SLTEMP(T), adjust_temperature(T)).
 
+-spec from_proper_generator(proper_types:type()) -> proplists:proplist().
 from_proper_generator(RawGenerator) ->
     ok = case get(target_sa_gen_cache) of
              undefined ->
@@ -63,7 +64,7 @@ replace_generators(Gen, _Hash) ->
             apply_temperature_scaling(RestrictedGenerator);
         _ ->
             %% fallback
-            case is_type(Gen) of
+            case proper_types:is_type(Gen) of
                 true ->
                     %% warning
                     io:format("Fallback using regular generator instead: ~p~n", [Gen]);
@@ -85,12 +86,13 @@ get_replacer(Type, [ {Guard, Replacer} | Tail]) ->
         _ -> get_replacer(Type, Tail)
     end.
 
-has_same_generator({'$type', LTP}, {'$type', RTP}) ->
-    LG = proplists:lookup(generator, LTP),
-    RG = proplists:lookup(generator, RTP),
-    LG=/=none andalso LG=:=RG;
-has_same_generator(_, _) ->
-    false.
+has_same_generator(LT, RT) ->
+    case proper_types:find_prop(generator, LT) of
+        {ok, LG} ->
+	    {ok, RG} = proper_types:find_prop(generator, RT),
+	    LG =:= RG;
+	error -> false
+    end.
 
 apply_constraints(UnrestrictedGenerator, Type) ->
     fun (Base, Temp) ->
@@ -222,7 +224,7 @@ list_choice({list, GrowthCoefficient}, Temp) ->
     Choice;
 list_choice(vector, Temp) ->
     C = random:uniform(),
-    C_Mod =          0.4 * Temp,
+    C_Mod = 0.4 * Temp,
     Choice = if
                  C < C_Mod -> modify;
                  true      -> nothing
@@ -233,7 +235,7 @@ list_choice(tuple, Temp) ->
     list_choice(vector, Temp).
 
 list_gen_sa(Type) ->
-    InternalType = get_type_prop(Type, internal_type),
+    {ok, InternalType} = proper_types:find_prop(internal_type, Type),
     %% io:format("list"),
     fun (Base, Temp) ->
             GrowthCoefficient = (random:uniform() * 0.8) + 0.1,
@@ -267,11 +269,11 @@ list_gen_internal(L=[H|T], Temp, InternalType, GrowthCoefficient) ->
 
 %% shrink_list
 is_shrink_list_type(Type) ->
-    has_same_generator(Type, proper_types:shrink_list(undef)).
+    has_same_generator(Type, proper_types:shrink_list([])).
 
 shrink_list_gen_sa(Type) ->
-    InternalType = get_type_prop(Type, env),
-    {next, TypeGen} = proplists:lookup(next, from_proper_generator(InternalType)),
+    {ok, Env} = proper_types:find_prop(env, Type),
+    {next, TypeGen} = proplists:lookup(next, from_proper_generator(Env)),
     TypeGen.
 
 %% vector
@@ -279,7 +281,7 @@ is_vector_type(Type) ->
     has_same_generator(Type, proper_types:vector(0, undef)).
 
 vector_gen_sa(Type) ->
-    InternalType = get_type_prop(Type, internal_type),
+    {ok, InternalType} = proper_types:find_prop(internal_type, Type),
     {next, ElementType} = proplists:lookup(next, from_proper_generator(InternalType)),
     fun GEN([], _) ->
             [];
@@ -338,7 +340,8 @@ is_tuple_type(Type) ->
     has_same_generator(Type, proper_types:tuple([undef])).
 
 tuple_gen_sa(Type) ->
-    InternalTypes = tuple_to_list(get_type_prop(Type, internal_types)),
+    {ok, InternalTuple} = proper_types:find_prop(internal_types, Type),
+    InternalTypes = tuple_to_list(InternalTuple),
     ElementGens = lists:map(fun (E) ->
                                     {next, Gen} = proplists:lookup(next, from_proper_generator(E)),
                                     Gen end,
@@ -361,10 +364,11 @@ is_fixed_list_type(Type) ->
     has_same_generator(Type, proper_types:fixed_list([])).
 
 fixed_list_gen_sa(Type) ->
-    InternalTypes = get_type_prop(Type, internal_types),
+    {ok, InternalTypes} = proper_types:find_prop(internal_types, Type),
     ElementGens = lists:map(fun (E) ->
                                     {next, Gen} = proplists:lookup(next, from_proper_generator(E)),
-                                    Gen end,
+                                    Gen
+                            end,
                             InternalTypes),
     fun ([], _) -> [];
         (Base, Temp) ->
@@ -379,7 +383,7 @@ fixed_list_gen_sa(Type) ->
 
 %% union
 is_union_type(Type) ->
-    has_same_generator(Type, proper_types:union([])).
+    has_same_generator(Type, proper_types:union([42])).
 
 get_cached_union(Type, Combined) ->
     Key = erlang:phash2({union_type, Type, Combined}),
@@ -394,15 +398,15 @@ set_cache_union(Type, Base, Combined) ->
     put(target_sa_gen_cache, M#{Key => Base}).
 
 union_gen_sa(Type) ->
-    ElementTypes = get_type_prop(Type, env),
+    {ok, Env} = proper_types:find_prop(env, Type),
     %% io:format("union"),
     fun (Base, Temp) ->
             C = random:uniform(),
-            C_Chg =       0.5 * ?TEMP(Temp),
+            C_Chg = 0.5 * ?TEMP(Temp),
             if
                 C < C_Chg ->
-                    Index = trunc(random:uniform() * length(ElementTypes)) + 1,
-                    ET = lists:nth(Index, ElementTypes),
+                    Index = trunc(random:uniform() * length(Env)) + 1,
+                    ET = lists:nth(Index, Env),
                     {ok, Value} = proper_gen:clean_instance(proper_gen:safe_generate(ET)),
                     set_cache_union(Type, Value, ET),
                     Value;
@@ -416,8 +420,8 @@ union_gen_sa(Type) ->
                             Modified;
                         not_found ->
                             %% first time
-                            Index = trunc(random:uniform() * length(ElementTypes)) + 1,
-                            ET = lists:nth(Index, ElementTypes),
+                            Index = trunc(random:uniform() * length(Env)) + 1,
+                            ET = lists:nth(Index, Env),
                             {ok, Value} = proper_gen:clean_instance(proper_gen:safe_generate(ET)),
                             set_cache_union(Type, Value, ET),
                             Value
@@ -450,8 +454,8 @@ set_cache_let(Type, Base, Combined) ->
     put(target_sa_gen_cache, M#{Key => Base}).
 
 let_gen_sa(Type) ->
-    Combine = get_type_prop(Type, combine),
-    PartsType = get_type_prop(Type, parts_type),
+    {ok, Combine} = proper_types:find_prop(combine, Type),
+    {ok, PartsType} = proper_types:find_prop(parts_type, Type),
     {next, PartsGen} = proplists:lookup(next, from_proper_generator(PartsType)),
     fun (Base, Temp) ->
             LetOuter = case get_cached_let(Type, Base) of
@@ -467,14 +471,13 @@ let_gen_sa(Type) ->
                                    true ->
                                        Stored
                                end;
-
                            not_found ->
                                %% first time running the let
                                {ok, Generated} = proper_gen:clean_instance(proper_gen:safe_generate(PartsType)),
                                Generated
                        end,
             Combined = Combine(LetOuter),
-            NewValue = case is_type(Combined) of
+            NewValue = case proper_types:is_type(Combined) of
                            true ->
                                {next, InternalGen} = proplists:lookup(next, from_proper_generator(Combined)),
                                InternalGen(Base, Temp);
@@ -494,17 +497,6 @@ let_gen_sa(Type) ->
 %% letshrink
 
 %% utility
-
-is_type({'$type', _}) -> true;
-is_type(_) -> false.
-
-get_type_prop({'$type', TypeProperties}, Property) ->
-    case proplists:lookup(Property, TypeProperties) of
-        {Property, Value} -> Value;
-        _ -> throw(property_not_found)
-    end;
-get_type_prop(_, _) ->
-    throw(not_a_type).
 
 dont_change(X) ->
     fun (_, _) -> X end.

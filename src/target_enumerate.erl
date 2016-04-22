@@ -8,20 +8,24 @@
 	 get_shrinker/1
 	]).
 
+-spec init_strategy(proper:outer_test()) -> proper:outer_test().
 init_strategy(Prop) ->
     erase(target_enumerate_data),
     undefined = put(target_enumerate_data, dict:new()),
     Prop.
 
+-spec init_target(target_strategy:options()) -> target_strategy:target().
 init_target(_) ->
     %% enumerate targets are all integer targets counting from 0 upwards
     {0, fun (Last) -> {Last+1, Last+1} end, fun (TargetState, _Fitness) -> TargetState end}.
 
+-spec store_target(target:key(), target_strategy:target()) -> 'ok'.
 store_target(Key, Target) ->
     NewDict = dict:store(Key, Target, get(target_enumerate_data)),
     put(target_enumerate_data, NewDict),
     ok.
 
+-spec retrieve_target(target:key()) -> target_strategy:target().
 retrieve_target(Key) ->
     Dict = get(target_enumerate_data),
     case dict:is_key(Key, Dict) of
@@ -31,8 +35,10 @@ retrieve_target(Key) ->
 	    undefined
     end.
 
+-spec update_global_fitness(target:fitness()) -> 'ok'.
 update_global_fitness(_Fitness) ->
     ok.
 
+-spec get_shrinker(target_strategy:options()) -> proper_types:type().
 get_shrinker(_) ->
     proper_types:integer().

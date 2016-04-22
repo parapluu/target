@@ -9,17 +9,20 @@
         ]).
 
 %% init functions
+-spec init_strategy(proper:outer_test()) -> proper:outer_test().
 init_strategy(Prop) ->
     erase(target_hillclimb_data),
     undefined = put(target_hillclimb_data, dict:new()),
     Prop.
 
 %% storage functions
+-spec store_target(target:key(), target_strategy:target()) -> 'ok'.
 store_target(Key, Target) ->
     NewDict = dict:store(Key, Target, get(target_hillclimb_data)),
     put(target_hillclimb_data, NewDict),
     ok.
 
+-spec retrieve_target(target:key()) -> target_strategy:target().
 retrieve_target(Key) ->
     Dict = get(target_hillclimb_data),
     case dict:is_key(Key, Dict) of
@@ -30,6 +33,7 @@ retrieve_target(Key) ->
     end.
 
 %% strategy functions
+-spec init_target(target_strategy:options()) -> target_strategy:target().
 init_target(_) ->
     {{0, none, none},
      fun ({LastAcc, AccUtility, _LastGen}) ->
@@ -45,14 +49,17 @@ init_target(_) ->
              end
      end}.
 
+-spec get_shrinker(target_strategy:options()) -> proper_types:type().
 get_shrinker(_) ->
     proper_types:integer().
 
 %% global fitness function
+-spec update_global_fitness(target:fitness()) -> 'ok'.
 update_global_fitness(Utility) ->
     GlobalState = get(target_hillclimb_data),
     NewGlobalState = dict:fold(fun (T,{S,NF,UF}, AccIn) ->
                                        dict:store(T, {UF(S, Utility), NF, UF}, AccIn)
                                end,
                                dict:new(), GlobalState),
-    put(target_hillclimb_data, NewGlobalState).
+    put(target_hillclimb_data, NewGlobalState),
+    ok.

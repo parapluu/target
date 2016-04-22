@@ -5,17 +5,17 @@
 
 -include_lib("proper/include/proper_common.hrl").
 
--type key() :: nonempty_string().
--type generator() :: any().
--type fitness() :: any().
-
 -export_type([key/0, fitness/0]).
+
+-type key() :: nonempty_string() | reference().
+-type generator() :: any().
+-type fitness()   :: number().
+-type threshold() :: fitness() | 'inf'.
 
 -spec targeted(key(), generator(), [{atom(), any()}]) -> generator().
 targeted(Key,Gen, Opts) ->
     ?SHRINK(proper_types:exactly(?LAZY(targeted_gen(Key, Gen, Opts))),
             [target_strategy:shrink_gen(Opts)]).
-
 
 %% @private
 targeted_gen(Key, Gen, Opts) ->
@@ -28,10 +28,12 @@ targeted_gen(Key, Gen, Opts) ->
 %%     ?LET(X, ShrinkType,
 %%          ?LAZY(Gen(X))).
 
+-spec adjust(fitness(), threshold()) -> boolean().
 adjust(Fitness, Threshold) ->
     set_fitness(Fitness),
     check_threshold(Threshold, Fitness).
 
+-spec adjust(fitness(), threshold(), key()) -> boolean().
 adjust(Fitness, Threshold, Key) ->
     set_fitness(Fitness, Key),
     check_threshold(Threshold, Fitness).
