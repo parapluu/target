@@ -134,10 +134,14 @@ simple_graph() ->
 prop_graph() ->
     ?FORALL_SA({V, E}, ?TARGET(target_sa_gen:from_proper_generator(simple_graph())),
                begin
-                       ?MAXIMIZE(length(V)-length(E)),
-                   io:format("V, E = ~p ~p~n", [V, E]),
+                   ?MAXIMIZE((length(E) - length(V))),
+                   %%    io:format("~p", [length(V) + length(E)]),
                    true
                end).
 
 graph_test() ->
-    true = proper:quickcheck(prop_graph(), [{to_file, user}, {numtests, 1000}]).
+    N = 1000,
+    put(target_sa_steps, N),
+    put(target_sa_tempfunc, default),
+    put(target_sa_acceptfunc, default),
+    true = proper:quickcheck(prop_graph(), [{to_file, user}, {numtests, N}]).

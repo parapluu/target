@@ -5,6 +5,7 @@
 
 -define(GENERATORS, [{fun is_atom/1, fun dont_change/1},
                      {fun is_list_type/1, fun list_gen_sa/1},
+                     {fun is_fixed_list_type/1, fun fixed_list_gen_sa/1},
                      {fun is_integer_type/1, fun integer_gen_sa/1},
                      {fun is_float_type/1, fun float_gen_sa/1},
                      {fun is_atom_type/1, fun atom_gen_sa/1},
@@ -14,9 +15,13 @@
                      {fun is_binary_len_type/1, fun binary_len_gen_sa/1},
                      {fun is_let_type/1, fun let_gen_sa/1},
                      {fun is_shrink_list_type/1, fun shrink_list_gen_sa/1},
-                     {fun is_union_type/1, fun union_sa_gen/1}]).
+                     {fun is_union_type/1, fun union_gen_sa/1},
+                     {fun is_exactly_type/1, fun exactly_gen_sa/1}]).
 
-from_proper_generator(Generator) ->
+-define(TEMP(T), calculate_temperature(T)).
+-define(SLTEMP(T), adjust_temperature(T)).
+
+from_proper_generator(RawGenerator) ->
     ok = case get(target_sa_gen_cache) of
              undefined ->
                  put(target_sa_gen_cache, #{}),
@@ -25,6 +30,7 @@ from_proper_generator(Generator) ->
                  %% use existing cache
                  ok
          end,
+    Generator = cook(RawGenerator),
     Hash = erlang:phash2(Generator),
     case get(?STORRAGE) of
         undefined ->
@@ -34,15 +40,37 @@ from_proper_generator(Generator) ->
     end,
     [{first, Generator}, {next, replace_generators(Generator, Hash)}].
 
+cook(Type = {'$type',_Props}) ->
+    Type;
+cook(RawType) ->
+    if
+        is_tuple(RawType) ->
+            proper_types:tuple(tuple_to_list(RawType));
+        %% CAUTION: this must handle improper lists
+        is_list(RawType)  ->
+            proper_types:fixed_list(RawType);
+        %% default case (covers integers, floats, atoms, binaries, ...):
+        true              ->
+            proper_types:exactly(RawType)
+    end.
+
 replace_generators(Gen, _Hash) ->
     case get_replacer(Gen) of
         {ok, Replacer} ->
             %% replaced generator
             UnrestrictedGenerator = Replacer(Gen),
-            apply_constraints(UnrestrictedGenerator, Gen);
+            RestrictedGenerator = apply_constraints(UnrestrictedGenerator, Gen),
+            apply_temperature_scaling(RestrictedGenerator);
         _ ->
             %% fallback
-            io:format("Fallback using regular generator instead: ~p~n", [Gen]),
+            case is_type(Gen) of
+                true ->
+                    %% warning
+                    io:format("Fallback using regular generator instead: ~p~n", [Gen]);
+                false ->
+                    %% literal value -> no warning
+                    ok
+            end,
             fun (_, _) -> Gen end
     end.
 
@@ -86,6 +114,36 @@ restrict_generation(Gen, B, T, TriesLeft, Type, WeakInstance) ->
             restrict_generation(Gen, B, T, TriesLeft - 1, Type, WeakInstance)
     end.
 
+apply_temperature_scaling(Generator) ->
+    fun (Base, Temp) ->
+            %%     Generator(Base, Temp)
+            case Temp of
+                {Depth, Temperature} -> Generator(Base, {Depth + 1, Temperature});
+                _ -> Generator(Base, {1, Temp})
+            end
+    end.
+
+adjust_temperature({Depth, Temperature}) ->
+    {Depth - 1, Temperature};
+adjust_temperature(Temp) ->
+    Temp.
+
+temperature_scaling(X) ->
+    X / (1.0 + X).
+
+calculate_temperature({Depth, Temp}) ->
+    temperature_scaling(Temp*Depth);
+calculate_temperature(Temp) ->
+    temperature_scaling(Temp).
+
+%% exactly
+is_exactly_type(Type) ->
+    has_same_generator(Type, proper_types:exactly(undefined)).
+
+exactly_gen_sa({'$type', TypeProps}) ->
+    {env, Value} = proplists:lookup(env, TypeProps),
+    fun (_, _) -> Value end.
+
 %% Numbers
 
 %% utility functions
@@ -103,13 +161,13 @@ is_integer_type(Type) ->
 
 integer_gen_sa({'$type', TypeProps}) ->
     {env, {Min, Max}} = proplists:lookup(env, TypeProps),
-    fun (Base, Temp) ->
+    fun (Base, TD) ->
+            Temp = ?TEMP(TD),
             OffsetLimit = case Min=:=inf orelse Max=:=inf of
                               true ->
                                   trunc(1000 * Temp);
                               false ->
-                                  Limit = trunc(abs(Min - Max) * Temp * 0.1) + 1,
-                                  Limit
+                                  trunc(abs(Min - Max) * Temp * 0.1) + 1
                           end,
             Offset = proper_arith:rand_int(-OffsetLimit, OffsetLimit),
             make_inrange(Base, Offset, Min, Max)
@@ -121,7 +179,8 @@ is_float_type(Type) ->
 
 float_gen_sa({'$type', TypeProps}) ->
     {env, {Min, Max}} = proplists:lookup(env, TypeProps),
-    fun (Base, Temp) ->
+    fun (Base, TD) ->
+            Temp = ?TEMP(TD),
             {OffsetMin, OffsetMax} = case Min=:=inf orelse Max=:=inf of
                                          true ->
                                              {-1000.0 * Temp, 1000.0 * Temp};
@@ -146,11 +205,13 @@ list_choice(empty, Temp) ->
              end,
     %% io:format("ChoiceE: ~p ~n", [C]),
     Choice;
-list_choice(list, Temp) ->
+list_choice({list, GrowthCoefficient}, Temp) ->
     C = random:uniform(),
-    C_Add =          0.2 * Temp,
-    C_Del = C_Add + (0.1 * Temp),
-    C_Mod = C_Del + (0.17 * Temp),
+    AddCoefficient = 0.6 * GrowthCoefficient,
+    DelCoefficient = 0.6 * (1- GrowthCoefficient),
+    C_Add =          AddCoefficient * Temp,
+    C_Del = C_Add + (DelCoefficient * Temp),
+    C_Mod = C_Del + (0.3 * Temp),
     Choice = if
                  C < C_Add -> add;
                  C < C_Del -> del;
@@ -173,31 +234,35 @@ list_choice(tuple, Temp) ->
 
 list_gen_sa(Type) ->
     InternalType = get_type_prop(Type, internal_type),
-    {next, ElementType} = proplists:lookup(next, from_proper_generator(InternalType)),
-    fun GEN([], Temp) ->
-            %% chance to add an element
-            case list_choice(empty, Temp) of
-                add ->
-                    io:format("it: ~p~n", [InternalType]),
-                    {ok, New} = proper_gen:clean_instance(proper_gen:safe_generate(InternalType)),
-                    [New | GEN([], Temp)];
-                nothing -> []
-            end;
-        GEN(L=[H|T], Temp) ->
-            %% chance to modify current element
-            %% chance to delete current element
-            %% chance to add element infront of current element
-            case list_choice(list, Temp) of
-                add ->
-                    {ok, New} = proper_gen:clean_instance(proper_gen:safe_generate(InternalType)),
-                    [New | GEN(L, Temp)];
-                del ->
-                    GEN(T, Temp);
-                modify ->
-                    [ElementType(H, Temp) | GEN(T, Temp)];
-                nothing ->
-                    [H | GEN(T, Temp)]
-            end
+    %% io:format("list"),
+    fun (Base, Temp) ->
+            GrowthCoefficient = (random:uniform() * 0.8) + 0.1,
+            list_gen_internal(Base, Temp, InternalType, GrowthCoefficient)
+    end.
+
+list_gen_internal([], Temp, InternalType, GrowthCoefficient) ->
+    %% chance to add an element
+    case list_choice(empty, ?TEMP(Temp)) of
+        add ->
+            {ok, New} = proper_gen:clean_instance(proper_gen:safe_generate(InternalType)),
+            [New | list_gen_internal([], Temp, InternalType, GrowthCoefficient)];
+        nothing -> []
+    end;
+list_gen_internal(L=[H|T], Temp, InternalType, GrowthCoefficient) ->
+    %% chance to modify current element
+    %% chance to delete current element
+    %% chance to add element infront of current element
+    case list_choice({list, GrowthCoefficient}, ?TEMP(Temp)) of
+        add ->
+            {ok, New} = proper_gen:clean_instance(proper_gen:safe_generate(InternalType)),
+            [New | list_gen_internal(L, Temp, InternalType, GrowthCoefficient)];
+        del ->
+            list_gen_internal(T, Temp, InternalType, GrowthCoefficient);
+        modify ->
+            {next, ElementType} = proplists:lookup(next, from_proper_generator(InternalType)),
+            [ElementType(H, Temp) | list_gen_internal(T, Temp, InternalType, GrowthCoefficient)];
+        nothing ->
+            [H | list_gen_internal(T, Temp, InternalType, GrowthCoefficient)]
     end.
 
 %% shrink_list
@@ -219,7 +284,7 @@ vector_gen_sa(Type) ->
     fun GEN([], _) ->
             [];
         GEN([H|T], Temp) ->
-            case list_choice(vector, Temp) of
+            case list_choice(vector, ?TEMP(Temp)) of
                 modify ->
                     [ElementType(H, Temp) | GEN(T, Temp)];
                 nothing ->
@@ -256,14 +321,14 @@ binary_gen_sa(_Type) ->
     {next, ListGen} = proplists:lookup(next, from_proper_generator(binary_list())),
     fun (Base, Temp) ->
             ListRepr = binary_to_list(Base),
-            list_to_binary(ListGen(ListRepr, Temp))
+            list_to_binary(ListGen(ListRepr, ?SLTEMP(Temp)))
     end.
 
 binary_len_gen_sa(_Type) ->
     {next, VectorGen} = proplists:lookup(next, from_proper_generator(binary_vector())),
     fun (Base, Temp) ->
             ListRepr = binary_to_list(Base),
-            list_to_binary(VectorGen(ListRepr, Temp))
+            list_to_binary(VectorGen(ListRepr, ?SLTEMP(Temp)))
     end.
 
 %% bitstrings
@@ -278,16 +343,38 @@ tuple_gen_sa(Type) ->
                                     {next, Gen} = proplists:lookup(next, from_proper_generator(E)),
                                     Gen end,
                             InternalTypes),
-    fun (Base, Temp) ->
+    fun ({}, _) -> {};
+        (Base, Temp) ->
             ListRepr = tuple_to_list(Base),
             NewTupleAsList = lists:map(fun ({Gen, Elem}) ->
-                                               case list_choice(tuple, Temp) of
+                                               case list_choice(tuple, ?TEMP(Temp)) of
                                                    nothing -> Elem;
                                                    modify -> Gen(Elem, Temp)
                                                end
                                        end,
                                        lists:zip(ElementGens, ListRepr)),
             list_to_tuple(NewTupleAsList)
+    end.
+
+%% fixed list
+is_fixed_list_type(Type) ->
+    has_same_generator(Type, proper_types:fixed_list([])).
+
+fixed_list_gen_sa(Type) ->
+    InternalTypes = get_type_prop(Type, internal_types),
+    ElementGens = lists:map(fun (E) ->
+                                    {next, Gen} = proplists:lookup(next, from_proper_generator(E)),
+                                    Gen end,
+                            InternalTypes),
+    fun ([], _) -> [];
+        (Base, Temp) ->
+            lists:map(fun ({Gen, Elem}) ->
+                              case list_choice(tuple, ?TEMP(Temp)) of
+                                  nothing -> Elem;
+                                  modify -> Gen(Elem, Temp)
+                              end
+                      end,
+                      lists:zip(ElementGens, Base))
     end.
 
 %% union
@@ -306,21 +393,26 @@ set_cache_union(Type, Base, Combined) ->
     M = get(target_sa_gen_cache),
     put(target_sa_gen_cache, M#{Key => Base}).
 
-union_sa_gen(Type) ->
+union_gen_sa(Type) ->
     ElementTypes = get_type_prop(Type, env),
+    %% io:format("union"),
     fun (Base, Temp) ->
             C = random:uniform(),
-            C_Mod =       0.3 * Temp,
-            C_Chg = C_Mod + 0.2 * Temp,
+            C_Chg =       0.5 * ?TEMP(Temp),
             if
-                C < C_Mod ->
+                C < C_Chg ->
+                    Index = trunc(random:uniform() * length(ElementTypes)) + 1,
+                    ET = lists:nth(Index, ElementTypes),
+                    {ok, Value} = proper_gen:clean_instance(proper_gen:safe_generate(ET)),
+                    set_cache_union(Type, Value, ET),
+                    Value;
+                true ->
                     case get_cached_union(Type, Base) of
                         {ok, ET} ->
                             %% this type generated Base
                             {next, ETGen} = proplists:lookup(next, from_proper_generator(ET)),
                             Modified = ETGen(Base, Temp),
                             set_cache_union(Type, Modified, ET),
-                        %%     io:format("MOD: ~p~n", [Modified]),
                             Modified;
                         not_found ->
                             %% first time
@@ -329,16 +421,8 @@ union_sa_gen(Type) ->
                             {ok, Value} = proper_gen:clean_instance(proper_gen:safe_generate(ET)),
                             set_cache_union(Type, Value, ET),
                             Value
-                    end;
-                C < C_Chg ->
-                    Index = trunc(random:uniform() * length(ElementTypes)) + 1,
-                    ET = lists:nth(Index, ElementTypes),
-                    {ok, Value} = proper_gen:clean_instance(proper_gen:safe_generate(ET)),
-                    set_cache_union(Type, Value, ET),
-                    Value;
-                true ->
-                %%     io:format("BASE: ~p~n", [Base]),
-                    Base
+                    end
+
             end
     end.
 
@@ -370,23 +454,35 @@ let_gen_sa(Type) ->
     PartsType = get_type_prop(Type, parts_type),
     {next, PartsGen} = proplists:lookup(next, from_proper_generator(PartsType)),
     fun (Base, Temp) ->
-            Modified = case get_cached_let(Type, Base) of
+            LetOuter = case get_cached_let(Type, Base) of
                            {ok, Stored} ->
-                               PartsGen(Stored, Temp);
+                               C = random:uniform(),
+                               C_Cnt = case ?TEMP(Temp) of
+                                           0.0 -> 0.0;
+                                           T -> math:sqrt(T)
+                                       end,
+                               if
+                                   C < C_Cnt ->
+                                       PartsGen(Stored, ?SLTEMP(Temp));
+                                   true ->
+                                       Stored
+                               end;
+
                            not_found ->
                                %% first time running the let
                                {ok, Generated} = proper_gen:clean_instance(proper_gen:safe_generate(PartsType)),
                                Generated
                        end,
-            Combined = Combine(Modified),
-            set_cache_let(Type, Modified, Combined),
-            case is_type(Combined) of
-                true ->
-                    {next, InternalGen} = proplists:lookup(next, from_proper_generator(Combined)),
-                    InternalGen(Base, Temp);
-                false ->
-                    Combined
-            end
+            Combined = Combine(LetOuter),
+            NewValue = case is_type(Combined) of
+                           true ->
+                               {next, InternalGen} = proplists:lookup(next, from_proper_generator(Combined)),
+                               InternalGen(Base, Temp);
+                           false ->
+                               Combined
+                       end,
+            set_cache_let(Type, LetOuter, NewValue),
+            NewValue
     end.
 
 %% lazy

@@ -55,6 +55,12 @@
 
 -define(RANDOM_PROPABILITY, (random:uniform())).
 
+print_accepted(State, Utility, Temperature) ->
+    case get(target_print_accepted) of
+        Printer when is_function(Printer) -> Printer(State, Utility);
+        true -> io:format("Accepted at Fitness ~p and Temperature ~p ~n", [Utility, Temperature]);
+        _ -> ok
+    end.
 
 acceptance_function_standard(EnergyCurrent, EnergyNew, Temperature) ->
     case EnergyNew > EnergyCurrent of
@@ -325,6 +331,7 @@ update_global_fitness(Fitness) ->
                                    Temperature) of
                   true ->
                       %% accept new state
+                      print_accepted(Data, Fitness, Temperature),
                       NewState = update_all_targets(Data#sa_data.state),
                       %% calculate new temperature
                       {NewTemperature, AdjustedK} = (Data#sa_data.temp_func)(Temperature,
