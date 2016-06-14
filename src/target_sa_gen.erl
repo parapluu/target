@@ -1,5 +1,5 @@
 -module (target_sa_gen).
--export([from_proper_generator/1]).
+-compile(export_all).
 
 -define(STORRAGE, target_sa_gen_storrage).
 

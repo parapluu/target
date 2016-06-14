@@ -125,14 +125,14 @@ temperature_function_fast_sa(_OldTemperature,
 temperature_function_fast2_sa(_OldTemperature,
                               _OldEnergyLevel,
                               _NewEnergyLevel,
-                              _K_Max,
+                              K_Max,
                               K_Current,
-                              Accepted) ->
-    AdjustedK = case not Accepted of
-                    true -> max(1, trunc(K_Current / 1.2));
-                    false -> K_Current + 1
-                end,
-    {1 / max(AdjustedK, 1.0), AdjustedK}.
+                              _Accepted) ->
+    %% AdjustedK = case not Accepted of
+    %%                 true -> max(1, trunc(K_Current / 1.2));
+    %%                 false -> K_Current + 1
+    %%             end,
+    {1.0 - math:sqrt(K_Current / K_Max), K_Current + 1}.
 
 temperature_function_reheat_sa(OldTemperature,
                                OldEnergyLevel,
