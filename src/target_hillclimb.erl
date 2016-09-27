@@ -37,7 +37,7 @@ retrieve_target(Key) ->
 init_target(_) ->
     {{0, none, none},
      fun ({LastAcc, AccUtility, _LastGen}) ->
-             Offset = random:uniform(42) - 21,
+             Offset = random:uniform()*20 - 10,
              NewValue = LastAcc + Offset,
              {{LastAcc, AccUtility, NewValue}, NewValue}
      end,
