@@ -1,3 +1,13 @@
+%%% -*- erlang-indent-level: 2 -*-
+%%% -------------------------------------------------------------------
+%%% Copyright (c) 2016, Andreas Löscher <andreas.loscher@it.uu.se>
+%%%                and  Konstantinos Sagonas <kostis@it.uu.se>
+%%% All rights reserved.
+%%%
+%%% This file is distributed under the Simplified BSD License.
+%%% Details can be found in the LICENSE file.
+%%% -------------------------------------------------------------------
+
 -module(target_strategy).
 -export([use_strategy/2, get_target/2, update_target/2, update_global/1, shrink_gen/1]).
 
