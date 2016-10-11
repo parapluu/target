@@ -17,8 +17,10 @@
 -include_lib("target/include/target.hrl").
 -inlcude_lib("eunit/include/eunit.hrl").
 
+-define(PROPER_OPTIONS, [quiet, {numtests, 1000}]).
+
 enumerate_test() ->
-    proper:quickcheck(prop_enum(),  [{to_file, user}, {numtests, 1000}]).
+    proper:quickcheck(prop_enum(),  ?PROPER_OPTIONS).
 
 prop_enum() ->
     ?TARGET_STRATEGY(target_enumerate,
@@ -30,7 +32,7 @@ prop_enum() ->
 
 sa_test() ->
     put(target_sa_steps, 10000),
-    proper:quickcheck(prop_sa(),  [{to_file, user}]).
+    proper:quickcheck(prop_sa(), ?PROPER_OPTIONS).
 
 prop_sa() ->
     ?TARGET_STRATEGY(target_sa,
@@ -46,7 +48,7 @@ check(I) ->
      I < 1000.
 
 shrinking_test() ->
-    false = proper:quickcheck(prop_shrinking(), [{to_file, user}, {numtests, 1000}]),
+    false = proper:quickcheck(prop_shrinking(), ?PROPER_OPTIONS),
     [1000] = proper:counterexample().
 
 prop_shrinking() ->

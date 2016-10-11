@@ -19,6 +19,7 @@
           graph_test/0,
           suchthat_test/0,
           union_test/0,
+          lazy_test/0,
           tuple_test/0,
           edge_test/0]).
 
@@ -26,7 +27,10 @@
 -include_lib("target/include/target.hrl").
 -inlcude_lib("eunit/include/eunit.hrl").
 
+-define(PROPER_OPTIONS, [quiet, {numtests, 1000}]).
+
 integer_test() ->
+  put(target_sa_testing, true),
     proper:global_state_init_size(10),
     {next, TG} = proplists:lookup(
                    next,
@@ -34,6 +38,7 @@ integer_test() ->
     appl(TG, 0, 100).
 
 list_test() ->
+  put(target_sa_testing, true),
     proper:global_state_init_size(10),
     {next, TG} = proplists:lookup(
                    next,
@@ -41,6 +46,7 @@ list_test() ->
     appl(TG, [], 100).
 
 combine_test() ->
+  put(target_sa_testing, true),
     proper:global_state_init_size(10),
     {next, TG} = proplists:lookup(
                    next,
@@ -61,7 +67,8 @@ prop_big_list() ->
                end).
 
 basic_test() ->
-    false = proper:quickcheck(prop_big_list(), [{to_file, user}, {numtests, 1000}]),
+  put(target_sa_testing, true),
+    false = proper:quickcheck(prop_big_list(), ?PROPER_OPTIONS),
     [L] = proper:counterexample(),
     48 = length(L).
 
@@ -76,7 +83,8 @@ prop_let() ->
                end).
 
 let_test() ->
-    true = proper:quickcheck(prop_let(), [{to_file, user}, {numtests, 1000}]).
+  put(target_sa_testing, true),
+    true = proper:quickcheck(prop_let(), ?PROPER_OPTIONS).
 
 suchthat_gen() ->
     ?SUCHTHAT(I, integer(), I rem 2 =:= 0).
@@ -90,14 +98,16 @@ prop_suchthat() ->
                end).
 
 suchthat_test() ->
-    true = proper:quickcheck(prop_suchthat(), [{to_file, user}, {numtests, 1000}]).
+  put(target_sa_testing, true),
+    true = proper:quickcheck(prop_suchthat(), ?PROPER_OPTIONS).
 
 prop_union() ->
     ?FORALL_SA(X, ?TARGET(target_sa_gen:from_proper_generator(proper_types:union([a,b,c]))),
                lists:member(X, [a,b,c])).
 
 union_test() ->
-    true = proper:quickcheck(prop_union(), [{to_file, user}, {numtests, 1000}]).
+  put(target_sa_testing, true),
+    true = proper:quickcheck(prop_union(), ?PROPER_OPTIONS).
 
 tuple_type() ->
     proper_types:tuple([integer(), integer()]).
@@ -110,7 +120,8 @@ prop_tuple() ->
                L>R).
 
 tuple_test() ->
-    true = proper:quickcheck(prop_tuple(), [{to_file, user}, {numtests, 1000}]).
+  put(target_sa_testing, true),
+    true = proper:quickcheck(prop_tuple(), ?PROPER_OPTIONS).
 
 prop_use_ngenerator() ->
   ?FORALL_SA(List, ?TARGET(proper_types:list(atom)),
@@ -121,9 +132,17 @@ prop_use_ngenerator() ->
              end).
 
 basic2_test() ->
-    false = proper:quickcheck(prop_use_ngenerator(), [{to_file, user}, {numtests, 1000}]),
+  put(target_sa_testing, true),
+    false = proper:quickcheck(prop_use_ngenerator(), ?PROPER_OPTIONS),
     [L] = proper:counterexample(),
     48 = length(L).
+
+prop_lazy() ->
+  ?FORALL_SA(I, ?TARGET(?LAZY(?LET(I, integer(), I*2))), I rem 2 == 0).
+
+lazy_test() ->
+  put(target_sa_testing, true),
+  true = proper:quickcheck(prop_lazy(), ?PROPER_OPTIONS).
 
 %% simple generator for a graph
 simple_edge(V) ->
@@ -134,7 +153,7 @@ prop_edge() ->
                L>R).
 
 edge_test() ->
-    true = proper:quickcheck(prop_edge(), [{to_file, user}, {numtests, 1000}]).
+    true = proper:quickcheck(prop_edge(), ?PROPER_OPTIONS).
 
 simple_edges(V) ->
     ?LET(Edges, list(simple_edge(V)),
@@ -164,8 +183,7 @@ prop_graph() ->
                end).
 
 graph_test() ->
-    N = 1000,
-    put(target_sa_steps, N),
+    put(target_sa_steps, 1000),
     put(target_sa_tempfunc, default),
     put(target_sa_acceptfunc, default),
-    true = proper:quickcheck(prop_graph(), [{to_file, user}, {numtests, N}]).
+    true = proper:quickcheck(prop_graph(), ?PROPER_OPTIONS).

@@ -28,6 +28,7 @@
                      {fun is_let_type/1, fun let_gen_sa/1},
                      {fun is_shrink_list_type/1, fun shrink_list_gen_sa/1},
                      {fun is_union_type/1, fun union_gen_sa/1},
+                     {fun is_wrapper_type/1, fun wrapper_gen_sa/1},
                      {fun is_exactly_type/1, fun exactly_gen_sa/1}]).
 
 -define(TEMP(T), calculate_temperature(T)).
@@ -79,7 +80,10 @@ replace_generators(Gen, _Hash) ->
       case proper_types:is_type(Gen) of
         true ->
           %% warning
-          io:format("Fallback using regular generator instead: ~p~n", [Gen]);
+          case get(target_sa_testing) of
+            true -> error(target_sa_fallback);
+            false -> io:format("Fallback using regular generator instead: ~p~n", [Gen])
+          end;
         false ->
           %% literal value -> no warning
           ok
@@ -500,8 +504,40 @@ let_gen_sa(Type) ->
   end.
 
 %% lazy
-
 %% sized
+is_wrapper_type(Type) ->
+  {ok, wrapper} =:= proper_types:find_prop(kind, Type).
+
+%% if generator function has arity 0 -> lazy; 1 -> sized
+wrapper_gen_sa(Type) ->
+  case proper_types:get_prop(generator, Type) of
+    {typed, Gen} ->
+      if
+        is_function(Gen, 1) ->
+          fun (Base, Temp) ->
+              {next, Internal} = proplists:lookup(next, from_proper_generator(Gen(Type))),
+              Internal(Base, Temp)
+          end;
+        is_function(Gen, 2) ->
+          fun (Base, Temp) ->
+              {next, Internal} = proplists:lookup(next, from_proper_generator(Gen(Type, proper:get_size(Type)))),
+              Internal(Base, Temp)
+          end
+      end;
+    Gen ->
+      if
+        is_function(Gen, 0) ->
+          fun (Base, Temp) ->
+              {next, Internal} = proplists:lookup(next, from_proper_generator(Gen())),
+              Internal(Base, Temp)
+          end;
+        is_function(Gen, 1) ->
+          fun (Base, Temp) ->
+              {next, Internal} = proplists:lookup(next, from_proper_generator(Gen(proper:get_size(Type)))),
+              Internal(Base, Temp)
+          end
+      end
+  end.
 
 %% shrink
 
