@@ -63,7 +63,7 @@
 -define(MAX_SIZE, 10000).
 -define(REHEAT_THRESHOLD, 5).
 
--define(RANDOM_PROPABILITY, (random:uniform())).
+-define(RANDOM_PROPABILITY, (rand:uniform())).
 
 print_accepted(State, Utility, Temperature) ->
   case get(target_print_accepted) of
