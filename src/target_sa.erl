@@ -304,7 +304,7 @@ parse_opts(Opts) ->
   case proper_types:is_type(Opts) of
     true ->
       %% automatically generate neighborhood function
-      target_sa_gen:from_proper_generator(Opts);
+      parse_opts(target_sa_gen:from_proper_generator(Opts), #sa_target{});
     false ->
       parse_opts(Opts, #sa_target{})
   end.

@@ -14,6 +14,7 @@
           list_test/0,
           combine_test/0,
           basic_test/0,
+          basic2_test/0,
           let_test/0,
           graph_test/0,
           suchthat_test/0,
@@ -110,6 +111,19 @@ prop_tuple() ->
 
 tuple_test() ->
     true = proper:quickcheck(prop_tuple(), [{to_file, user}, {numtests, 1000}]).
+
+prop_use_ngenerator() ->
+  ?FORALL_SA(List, ?TARGET(proper_types:list(atom)),
+             begin
+                 L = length(List),
+                 ?MAXIMIZE(-abs(L - 50)),
+                 abs(L-50) > 2
+             end).
+
+basic2_test() ->
+    false = proper:quickcheck(prop_use_ngenerator(), [{to_file, user}, {numtests, 1000}]),
+    [L] = proper:counterexample(),
+    48 = length(L).
 
 %% simple generator for a graph
 simple_edge(V) ->
