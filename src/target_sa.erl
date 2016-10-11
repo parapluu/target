@@ -63,7 +63,7 @@
 -define(MAX_SIZE, 10000).
 -define(REHEAT_THRESHOLD, 5).
 
--define(RANDOM_PROPABILITY, (rand:uniform())).
+-define(RANDOM_PROBABILITY, (rand:uniform())).
 
 print_accepted(State, Utility, Temperature) ->
   case get(target_print_accepted) of
@@ -75,34 +75,34 @@ print_accepted(State, Utility, Temperature) ->
 acceptance_function_standard(EnergyCurrent, EnergyNew, Temperature) ->
   case EnergyNew > EnergyCurrent of
     true ->
-      %% allways accept better results
+      %% always accept better results
       true;
     false ->
-      %% probabilistic accepptance (allways between 0 and 0.5)
-      AcceptancePropability  = try
+      %% probabilistic acceptance (always between 0 and 0.5)
+      AcceptanceProbability = try
                                  %%  1 / (1 + math:exp(abs(EnergyCurrent - EnergyNew) / Temperature))
                                  math:exp(-(EnergyCurrent - EnergyNew) / Temperature)
                                catch
                                  error:badarith -> 0.0
                                end,
       %% if random probability is less, accept
-      ?RANDOM_PROPABILITY < AcceptancePropability
+      ?RANDOM_PROBABILITY < AcceptanceProbability
   end.
 
 acceptance_function_normalized(EnergyCurrent, EnergyNew, Temperature) ->
   case EnergyNew > EnergyCurrent of
     true ->
-      %% allways accept better results
+      %% always accept better results
       true;
     false ->
-      %% probabilistic accepptance (allways between 0 and 0.5)
-      AcceptancePropability  = try
-                                 1 / (1 + math:exp( (1 -  (EnergyNew/EnergyCurrent)) / Temperature))
-                               catch
-                                 error:badarith -> 0.0
-                               end,
+      %% probabilistic acceptance (always between 0 and 0.5)
+      AcceptanceProbability = try
+				1 / (1 + math:exp( (1 -  (EnergyNew/EnergyCurrent)) / Temperature))
+			      catch
+				error:badarith -> 0.0
+			      end,
       %% if random probability is less, accept
-      ?RANDOM_PROPABILITY < AcceptancePropability
+      ?RANDOM_PROBABILITY < AcceptanceProbability
   end.
 
 acceptance_function_hillclimbing(EnergyCurrent, EnergyNew, _Temperature) ->
@@ -264,7 +264,7 @@ get_acceptance_function() ->
 
 -spec init_strategy(proper:outer_test()) -> proper:outer_test().
 init_strategy(Prop) ->
-  io:format("-- Simulated Anneahling Search Strategy --~n"),
+  io:format("-- Simulated Annealing Search Strategy --~n"),
   put(target_sa_data, #sa_data{k_max = get_amount_of_steps(Prop),
                                p = get_acceptance_function(),
                                temp_func = get_temperature_function()
