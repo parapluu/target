@@ -9,7 +9,9 @@
 %%% -------------------------------------------------------------------
 
 -module (target_sa_gen).
--compile(export_all).
+%% -compile(export_all).
+
+-export([from_proper_generator/1]).
 
 -define(STORRAGE, target_sa_gen_storrage).
 
@@ -208,7 +210,7 @@ is_list_type(Type) ->
   has_same_generator(Type, proper_types:list(proper_types:atom())).
 
 list_choice(empty, Temp) ->
-  C = random:uniform(),
+  C = rand:uniform(),
   C_Add = 0.5 * Temp,
   Choice = if
              C < C_Add -> add;
@@ -217,7 +219,7 @@ list_choice(empty, Temp) ->
   %% io:format("ChoiceE: ~p ~n", [C]),
   Choice;
 list_choice({list, GrowthCoefficient}, Temp) ->
-  C = random:uniform(),
+  C = rand:uniform(),
   AddCoefficient = 0.6 * GrowthCoefficient,
   DelCoefficient = 0.6 * (1- GrowthCoefficient),
   C_Add =          AddCoefficient * Temp,
@@ -232,7 +234,7 @@ list_choice({list, GrowthCoefficient}, Temp) ->
   %% io:format("ChoiceL: ~p ~n", [C]),
   Choice;
 list_choice(vector, Temp) ->
-  C = random:uniform(),
+  C = rand:uniform(),
   C_Mod = 0.4 * Temp,
   Choice = if
              C < C_Mod -> modify;
@@ -247,7 +249,7 @@ list_gen_sa(Type) ->
   {ok, InternalType} = proper_types:find_prop(internal_type, Type),
   %% io:format("list"),
   fun (Base, Temp) ->
-      GrowthCoefficient = (random:uniform() * 0.8) + 0.1,
+      GrowthCoefficient = (rand:uniform() * 0.8) + 0.1,
       list_gen_internal(Base, Temp, InternalType, GrowthCoefficient)
   end.
 
@@ -410,11 +412,11 @@ union_gen_sa(Type) ->
   {ok, Env} = proper_types:find_prop(env, Type),
   %% io:format("union"),
   fun (Base, Temp) ->
-      C = random:uniform(),
+      C = rand:uniform(),
       C_Chg = 0.5 * ?TEMP(Temp),
       if
         C < C_Chg ->
-          Index = trunc(random:uniform() * length(Env)) + 1,
+          Index = trunc(rand:uniform() * length(Env)) + 1,
           ET = lists:nth(Index, Env),
           {ok, Value} = proper_gen:clean_instance(proper_gen:safe_generate(ET)),
           set_cache_union(Type, Value, ET),
@@ -429,7 +431,7 @@ union_gen_sa(Type) ->
               Modified;
             not_found ->
               %% first time
-              Index = trunc(random:uniform() * length(Env)) + 1,
+              Index = trunc(rand:uniform() * length(Env)) + 1,
               ET = lists:nth(Index, Env),
               {ok, Value} = proper_gen:clean_instance(proper_gen:safe_generate(ET)),
               set_cache_union(Type, Value, ET),
@@ -469,7 +471,7 @@ let_gen_sa(Type) ->
   fun (Base, Temp) ->
       LetOuter = case get_cached_let(Type, Base) of
                    {ok, Stored} ->
-                     C = random:uniform(),
+                     C = rand:uniform(),
                      C_Cnt = case ?TEMP(Temp) of
                                0.0 -> 0.0;
                                T -> math:sqrt(T)
