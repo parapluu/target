@@ -524,7 +524,7 @@ get_size(Type, Temp) ->
              %% use random initial size
              %% proper:get_size(Type);
              trunc(rand:uniform() * 21 + 1);
-           Base ->
+           {ok, Base} ->
              %% alternate base size (max size is not accessible from the generator)
              OffsetLimit = trunc(21 * Temp + 1),
              Offset = trunc(rand:uniform() * OffsetLimit + 1),
