@@ -19,7 +19,9 @@
           graph_test/0,
           suchthat_test/0,
           union_test/0,
+          weighted_union_test/0,
           lazy_test/0,
+          sized_test/0,
           tuple_test/0,
           edge_test/0]).
 
@@ -72,57 +74,6 @@ basic_test() ->
     [L] = proper:counterexample(),
     48 = length(L).
 
-even_int() ->
-    ?LET(I, integer(), I*2).
-
-prop_let() ->
-    ?FORALL_SA(V, ?TARGET(target_sa_gen:from_proper_generator(even_int())),
-               begin
-                   ?MAXIMIZE(-V),
-                   V rem 2 == 0
-               end).
-
-let_test() ->
-  put(target_sa_testing, true),
-    true = proper:quickcheck(prop_let(), ?PROPER_OPTIONS).
-
-suchthat_gen() ->
-    ?SUCHTHAT(I, integer(), I rem 2 =:= 0).
-
-prop_suchthat() ->
-    ?FORALL_SA(V, ?TARGET(target_sa_gen:from_proper_generator(suchthat_gen())),
-               begin
-                   io:format("~p~n", [V]),
-                   ?MAXIMIZE(V),
-                   V rem 2 =:= 0
-               end).
-
-suchthat_test() ->
-  put(target_sa_testing, true),
-    true = proper:quickcheck(prop_suchthat(), ?PROPER_OPTIONS).
-
-prop_union() ->
-    ?FORALL_SA(X, ?TARGET(target_sa_gen:from_proper_generator(proper_types:union([a,b,c]))),
-               lists:member(X, [a,b,c])).
-
-union_test() ->
-  put(target_sa_testing, true),
-    true = proper:quickcheck(prop_union(), ?PROPER_OPTIONS).
-
-tuple_type() ->
-    proper_types:tuple([integer(), integer()]).
-
-tuple_type_res() ->
-    ?SUCHTHAT({V1, V2}, tuple_type(), V1>V2).
-
-prop_tuple() ->
-    ?FORALL_SA({L, R}, ?TARGET(target_sa_gen:from_proper_generator(tuple_type_res())),
-               L>R).
-
-tuple_test() ->
-  put(target_sa_testing, true),
-    true = proper:quickcheck(prop_tuple(), ?PROPER_OPTIONS).
-
 prop_use_ngenerator() ->
   ?FORALL_SA(List, ?TARGET(proper_types:list(atom)),
              begin
@@ -137,12 +88,87 @@ basic2_test() ->
     [L] = proper:counterexample(),
     48 = length(L).
 
+even_int() ->
+    ?LET(I, integer(), I*2).
+
+prop_let() ->
+    ?FORALL_SA(V, ?TARGET(even_int()),
+               begin
+                   ?MAXIMIZE(-V),
+                   V rem 2 == 0
+               end).
+
+let_test() ->
+  put(target_sa_testing, true),
+    true = proper:quickcheck(prop_let(), ?PROPER_OPTIONS).
+
+suchthat_gen() ->
+    ?SUCHTHAT(I, integer(), I rem 2 =:= 0).
+
+prop_suchthat() ->
+    ?FORALL_SA(V, ?TARGET(suchthat_gen()),
+               begin
+                   io:format("~p~n", [V]),
+                   ?MAXIMIZE(V),
+                   V rem 2 =:= 0
+               end).
+
+suchthat_test() ->
+  put(target_sa_testing, true),
+    true = proper:quickcheck(prop_suchthat(), ?PROPER_OPTIONS).
+
+prop_union() ->
+    ?FORALL_SA(X, ?TARGET(proper_types:union([a,b,c])),
+               lists:member(X, [a,b,c])).
+
+union_test() ->
+  put(target_sa_testing, true),
+    true = proper:quickcheck(prop_union(), ?PROPER_OPTIONS).
+
+prop_weighted_union() ->
+    ?FORALL_SA(X, ?TARGET(proper_types:weighted_union([{1, a},{2, b},{3, c}])),
+               lists:member(X, [a,b,c])).
+
+weighted_union_test() ->
+  put(target_sa_testing, true),
+    true = proper:quickcheck(prop_weighted_union(), ?PROPER_OPTIONS).
+
+tuple_type() ->
+    proper_types:tuple([integer(), integer()]).
+
+tuple_type_res() ->
+    ?SUCHTHAT({V1, V2}, tuple_type(), V1>V2).
+
+prop_tuple() ->
+    ?FORALL_SA({L, R}, ?TARGET(tuple_type_res()),
+               L>R).
+
+tuple_test() ->
+  put(target_sa_testing, true),
+    true = proper:quickcheck(prop_tuple(), ?PROPER_OPTIONS).
+
 prop_lazy() ->
   ?FORALL_SA(I, ?TARGET(?LAZY(?LET(I, integer(), I*2))), I rem 2 == 0).
 
 lazy_test() ->
   put(target_sa_testing, true),
   true = proper:quickcheck(prop_lazy(), ?PROPER_OPTIONS).
+
+sized_type() ->
+  ?SIZED(S, lists:seq(0, S)).
+
+prop_sized() ->
+  ?FORALL_SA(L, sized_type(),
+  begin
+    ?MAXIMIZE(lists:sum(L)),
+    length(L) < 42
+  end).
+
+sized_test() ->
+  put(target_sa_testing, true),
+  false = proper:quickcheck(prop_sized(), ?PROPER_OPTIONS),
+  [C] = proper:counterexample(),
+  length(C) =:= 42.
 
 %% simple generator for a graph
 simple_edge(V) ->

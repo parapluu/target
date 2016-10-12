@@ -397,8 +397,10 @@ fixed_list_gen_sa(Type) ->
   end.
 
 %% union
+%% weighted_union
 is_union_type(Type) ->
-  has_same_generator(Type, proper_types:union([42])).
+  has_same_generator(Type, proper_types:union([42])) orelse
+    has_same_generator(Type, proper_types:weighted_union([{1, 1}])).
 
 get_cached_union(Type, Combined) ->
   Key = erlang:phash2({union_type, Type, Combined}),
@@ -444,10 +446,6 @@ union_gen_sa(Type) ->
 
       end
   end.
-
-%% weighted_union
-
-%% utility functions
 
 %% let
 is_let_type({'$type', Props}) ->
@@ -508,7 +506,33 @@ let_gen_sa(Type) ->
 is_wrapper_type(Type) ->
   {ok, wrapper} =:= proper_types:find_prop(kind, Type).
 
-%% if generator function has arity 0 -> lazy; 1 -> sized
+get_cached_size(Type) ->
+  Key = erlang:phash2({sized_type, Type}),
+  case get(target_sa_gen_cache) of
+    #{Key := Base} -> {ok, Base};
+    _ -> not_found
+  end.
+
+set_cache_size(Type, Size) ->
+  Key = erlang:phash2({sized_type, Type}),
+  M = get(target_sa_gen_cache),
+  put(target_sa_gen_cache, M#{Key => Size}).
+
+get_size(Type, Temp) ->
+  Size = case get_cached_size(Type) of
+           not_found ->
+             %% use random initial size
+             %% proper:get_size(Type);
+             trunc(rand:uniform() * 21 + 1);
+           Base ->
+             %% alternate base size (max size is not accessible from the generator)
+             OffsetLimit = trunc(21 * Temp + 1),
+             Offset = trunc(rand:uniform() * OffsetLimit + 1),
+             make_inrange(Base, Offset, 1, 42)
+         end,
+  set_cache_size(Type, Size),
+  Size.
+
 wrapper_gen_sa(Type) ->
   case proper_types:get_prop(generator, Type) of
     {typed, Gen} ->
@@ -520,7 +544,8 @@ wrapper_gen_sa(Type) ->
           end;
         is_function(Gen, 2) ->
           fun (Base, Temp) ->
-              {next, Internal} = proplists:lookup(next, from_proper_generator(Gen(Type, proper:get_size(Type)))),
+              Size = get_size(Type, Temp),
+              {next, Internal} = proplists:lookup(next, from_proper_generator(Gen(Type, Size))),
               Internal(Base, Temp)
           end
       end;
@@ -533,15 +558,12 @@ wrapper_gen_sa(Type) ->
           end;
         is_function(Gen, 1) ->
           fun (Base, Temp) ->
-              {next, Internal} = proplists:lookup(next, from_proper_generator(Gen(proper:get_size(Type)))),
+              Size = get_size(Type, Temp),
+              {next, Internal} = proplists:lookup(next, from_proper_generator(Gen(Size))),
               Internal(Base, Temp)
           end
       end
   end.
-
-%% shrink
-
-%% letshrink
 
 %% utility
 
