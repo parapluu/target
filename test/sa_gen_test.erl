@@ -158,7 +158,7 @@ sized_type() ->
   ?SIZED(S, lists:seq(0, S)).
 
 prop_sized() ->
-  ?FORALL_SA(L, sized_type(),
+  ?FORALL_SA(L, ?TARGET(sized_type()),
   begin
     ?MAXIMIZE(lists:sum(L)),
     length(L) < 42

@@ -533,6 +533,19 @@ get_size(Type, Temp) ->
   set_cache_size(Type, Size),
   Size.
 
+save_sized_generation(Base, Temp, SAGen) ->
+  {next, Internal} = proplists:lookup(next, SAGen),
+  try
+    %% can fail with for example a fixed list
+    Internal(Base, Temp)
+  catch
+    error:function_clause ->
+      %% fixed list will fail here
+      {first, InternalInit} = proplists:lookup(first, SAGen),
+      {ok, E} = proper_gen:clean_instance(proper_gen:safe_generate(InternalInit)),
+      E
+  end.
+
 wrapper_gen_sa(Type) ->
   case proper_types:get_prop(generator, Type) of
     {typed, Gen} ->
@@ -544,9 +557,9 @@ wrapper_gen_sa(Type) ->
           end;
         is_function(Gen, 2) ->
           fun (Base, Temp) ->
-              Size = get_size(Type, Temp),
-              {next, Internal} = proplists:lookup(next, from_proper_generator(Gen(Type, Size))),
-              Internal(Base, Temp)
+              Size = get_size(Type, ?TEMP(Temp)),
+              SAGen = from_proper_generator(Gen(Type, Size)),
+              save_sized_generation(Base, Temp, SAGen)
           end
       end;
     Gen ->
@@ -558,9 +571,9 @@ wrapper_gen_sa(Type) ->
           end;
         is_function(Gen, 1) ->
           fun (Base, Temp) ->
-              Size = get_size(Type, Temp),
-              {next, Internal} = proplists:lookup(next, from_proper_generator(Gen(Size))),
-              Internal(Base, Temp)
+              Size = get_size(Type, ?TEMP(Temp)),
+              SAGen = from_proper_generator(Gen(Size)),
+              save_sized_generation(Base, Temp, SAGen)
           end
       end
   end.
