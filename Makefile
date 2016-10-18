@@ -1,4 +1,4 @@
-.PHONY: default fast all get-deps compile # dialyzer tests clean mrproper
+.PHONY: default all get-deps compile dialyzer tests clean
 
 ERL_INCLUDE = $(PWD):$(ERL_LIBS)
 
@@ -10,9 +10,9 @@ endif
 
 REBAR := .$(SEP)rebar
 
-default: fast
+default: compile
 
-fast: get-deps compile
+all: get-deps compile tests dialyze
 
 get-deps:
 	$(REBAR) get-deps
@@ -20,11 +20,17 @@ get-deps:
 compile:
 	$(REBAR) compile
 
+dialyzer: .plt/proper_plt compile
+	dialyzer -n --plt $< ebin -Wunmatched_returns -Wunderspecs
+
+.plt/proper_plt: .plt
+	dialyzer --build_plt --output_plt $@ --apps erts kernel stdlib compiler crypto syntax_tools deps/proper/ebin/*.beam
+
+tests: compile
+	ERL_LIBS=$(ERL_INCLUDE) $(REBAR) eunit skip_deps=true
+
 doc:
 	$(REBAR) doc skip_deps=true
 
 clean:
 	$(REBAR) clean
-
-tests: compile
-	ERL_LIBS=$(ERL_INCLUDE) $(REBAR) eunit skip_deps=true

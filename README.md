@@ -1,3 +1,5 @@
+[![Build Status](https://travis-ci.org/parapluu/target.svg?branch=master)](https://travis-ci.org/parapluu/target)
+
 # Target - Targeted Property-Based Testing
 
 Target adds a search-based strategy component to PropEr's input generation
