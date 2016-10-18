@@ -12,7 +12,7 @@ REBAR := .$(SEP)rebar
 
 default: compile
 
-all: get-deps compile tests dialyze
+all: get-deps compile tests dialyzer
 
 get-deps:
 	$(REBAR) get-deps
