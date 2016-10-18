@@ -156,7 +156,8 @@ calculate_temperature(Temp) ->
 
 %% exactly
 is_exactly_type(Type) ->
-  has_same_generator(Type, proper_types:exactly(undefined)).
+  proper_types:get_prop(kind, Type) =:= basic andalso
+    not proper_types:is_type(proper_types:get_prop(env, Type)).
 
 exactly_gen_sa({'$type', TypeProps}) ->
   {env, Value} = proplists:lookup(env, TypeProps),
