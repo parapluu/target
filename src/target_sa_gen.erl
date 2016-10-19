@@ -8,12 +8,11 @@
 %%% Details can be found in the LICENSE file.
 %%% -------------------------------------------------------------------
 
--module (target_sa_gen).
-%% -compile(export_all).
+-module(target_sa_gen).
 
 -export([from_proper_generator/1]).
 
--define(STORRAGE, target_sa_gen_storrage).
+-define(STORAGE, target_sa_gen_storage).
 
 -define(GENERATORS, [{fun is_atom/1, fun dont_change/1},
                      {fun is_list_type/1, fun list_gen_sa/1},
@@ -46,11 +45,11 @@ from_proper_generator(RawGenerator) ->
        end,
   Generator = cook(RawGenerator),
   Hash = erlang:phash2(Generator),
-  case get(?STORRAGE) of
+  case get(?STORAGE) of
     undefined ->
-      put(?STORRAGE, #{ Hash => #{} });
+      put(?STORAGE, #{ Hash => #{} });
     M ->
-      put(?STORRAGE, M#{ Hash => #{} })
+      put(?STORAGE, M#{ Hash => #{} })
   end,
   [{first, Generator}, {next, replace_generators(Generator, Hash)}].
 
