@@ -21,7 +21,7 @@
         ]).
 
 %% init functions
--spec init_strategy(proper:outer_test()) -> proper:outer_test().
+-spec init_strategy(Prop) -> Prop when Prop :: target_strategy:property().
 init_strategy(Prop) ->
   erase(target_hillclimb_data),
   undefined = put(target_hillclimb_data, dict:new()),

@@ -9,18 +9,19 @@
 %%% -------------------------------------------------------------------
 
 -module(target_sa).
+
 -behaviour(target_strategy).
+
+%% callbacks
 -export([init_strategy/1,
          init_target/1,
          store_target/2,
          retrieve_target/1,
          update_global_fitness/1,
-         get_shrinker/1,
-         %% lib
-         integer/0,
-         integer/2,
-         float/0,
-         float/2]).
+         get_shrinker/1
+	]).
+%% lib
+-export([integer/0, integer/2, float/0, float/2]).
 
 -include_lib("proper/include/proper_common.hrl").
 
@@ -44,7 +45,7 @@
                   %% energy level
                   last_energy = null             :: float() | null,
                   %% temperature function
-                  temperature = 1.0 :: float(),
+                  temperature = 1.0              :: float(),
                   temp_func = fun(_, _, _, _, _) -> 1.0 end :: fun(( %% old temperature
                                                                      float(),
                                                                      %% old energy level
@@ -262,7 +263,7 @@ get_acceptance_function() ->
       fun acceptance_function_standard/3
   end.
 
--spec init_strategy(proper:outer_test()) -> proper:outer_test().
+-spec init_strategy(Prop) -> Prop when Prop :: target_strategy:property().
 init_strategy(Prop) ->
   io:format("-- Simulated Annealing Search Strategy --~n"),
   put(target_sa_data, #sa_data{k_max = get_amount_of_steps(Prop),
@@ -279,7 +280,7 @@ init_target(Opts) ->
 
 create_target(TargetState) ->
   {ok, InitialValue} = proper_gen:clean_instance(proper_gen:safe_generate(TargetState#sa_target.first)),
-  {TargetState#sa_target{last_generated = InitialValue },
+  {TargetState#sa_target{last_generated = InitialValue},
    fun next_func/1,
    %% dummy local fitness function
    fun (S, _) -> S end}.
@@ -326,7 +327,7 @@ store_target(Key, Target) ->
   put(target_sa_data, NewData),
   ok.
 
--spec retrieve_target(target:key()) -> target_strategy:target().
+-spec retrieve_target(target:key()) -> target_strategy:target() | 'undefined'.
 retrieve_target(Key) ->
   Dict = (get(target_sa_data))#sa_data.state,
   case dict:is_key(Key, Dict) of
@@ -388,24 +389,34 @@ update_all_targets(Dict,  []) ->
 update_all_targets(Dict, [K|T]) ->
   FF = dict:fetch(K, Dict),
   {S, N, F} = FF,
-  update_all_targets(dict:store(K, {S#sa_target{ last_generated = S#sa_target.current_generated }, N, F}, Dict),
+  update_all_targets(dict:store(K, {S#sa_target{last_generated = S#sa_target.current_generated}, N, F}, Dict),
                      T).
 
 -spec get_shrinker(target_strategy:options()) -> proper_types:type().
 get_shrinker(Opts) ->
   ((parse_opts(Opts))#sa_target.first).
 
+%%--------------------------------------------------------------------------
 %% library
+%%--------------------------------------------------------------------------
+
+-type first() :: {'first', proper_types:type()}.
+-type next()  :: {'next' , fun((_, _) -> proper_types:type())}.
+%% XXX: Why is the following a list instead of typle/record?
+-type first_next() :: [first() | next()].
+
+-spec integer() -> first_next().
 integer() ->
   ?MODULE:integer(inf, inf).
 
+-spec integer(proper_types:extint(), proper_types:extint()) -> first_next().
 integer(L, R) ->
   [{first, proper_types:integer(L, R)},
    {next, integer_next(L, R)}].
 
 integer_next(L, R) ->
   fun (OldInstance, Temperature) ->
-      {LL, LR} = case L=:=inf orelse R=:=inf of
+      {LL, LR} = case L =:= inf orelse R =:= inf of
                    true ->
                      {inf, inf};
                    false ->
@@ -416,16 +427,18 @@ integer_next(L, R) ->
            make_inrange(OldInstance, X, L, R))
   end.
 
+-spec float() -> first_next().
 float() ->
   ?MODULE:float(inf, inf).
 
+-spec float(proper_types:extnum(), proper_types:extnum()) -> first_next().
 float(L, R) ->
   [{first, proper_types:float(L, R)},
    {next, float_next(L, R)}].
 
 float_next(L, R) ->
   fun (OldInstance, Temperature) ->
-      {LL, LR} = case L=:=inf orelse R=:=inf of
+      {LL, LR} = case L =:= inf orelse R =:= inf of
                    true ->
                      {inf, inf};
                    false ->
@@ -436,10 +449,12 @@ float_next(L, R) ->
            make_inrange(OldInstance, X, L, R))
   end.
 
-make_inrange(Val, L, R) when (R=:=inf orelse Val =< R) andalso (L=:=inf orelse Val >= L) -> Val;
+make_inrange(Val, L, R) when (R =:= inf orelse Val =< R) andalso (L =:= inf orelse Val >= L) -> Val;
 make_inrange(Val, L, _R) when Val < L -> L;
 make_inrange(Val, _L, R) when Val > R -> R.
 
-make_inrange(Val, Offset, L, R) when L=/=inf andalso Val + Offset < L -> make_inrange(Val - Offset, L, R);
-make_inrange(Val, Offset, L, R) when R=/=inf andalso Val + Offset > R -> make_inrange(Val - Offset, L, R);
+make_inrange(Val, Offset, L, R) when L =/= inf, Val + Offset < L ->
+  make_inrange(Val - Offset, L, R);
+make_inrange(Val, Offset, L, R) when R =/= inf, Val + Offset > R ->
+  make_inrange(Val - Offset, L, R);
 make_inrange(Val, Offset, L, R) -> make_inrange(Val + Offset, L, R).
