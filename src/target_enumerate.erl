@@ -26,7 +26,7 @@ init_strategy(Prop) ->
   undefined = put(target_enumerate_data, dict:new()),
   Prop.
 
--spec init_target(target_strategy:options()) -> target_strategy:target().
+-spec init_target(target:tmap()) -> target_strategy:target().
 init_target(_) ->
   %% enumerate targets are all integer targets counting from 0 upwards
   {0, fun (Last) -> {Last+1, Last+1} end, fun (TargetState, _Fitness) -> TargetState end}.
@@ -51,6 +51,6 @@ retrieve_target(Key) ->
 update_global_fitness(_Fitness) ->
   ok.
 
--spec get_shrinker(target_strategy:options()) -> proper_types:type().
+-spec get_shrinker(target:tmap()) -> proper_types:type().
 get_shrinker(_) ->
   proper_types:integer().

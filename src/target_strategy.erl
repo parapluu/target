@@ -21,15 +21,16 @@
 -type target()    :: {target_state(), next_func(), fitness_func()}.
 -type options()   :: [{atom(), term()}].
 -type property()  :: proper:outer_test().
+-type strategy()  :: module().
 -type generator() :: proper_types:raw_type().
 
 %% behaviour for strategies
 %% strategy global initializer
 -callback init_strategy(property()) -> property().
 %% target (one variable) initializer
--callback init_target(options()) -> target().
+-callback init_target(target:tmap()) -> target().
 %% %% generator for shrinking
--callback get_shrinker(options()) -> generator().
+-callback get_shrinker(target:tmap()) -> generator().
 %% store, and retrieve state
 -callback store_target(target:key(), target_state()) -> 'ok'.
 -callback retrieve_target(target:key()) -> target() | 'undefined'.
@@ -40,10 +41,10 @@
 -define(STRATEGY, get(target_strategy)).
 
 %% store the used strategy into the process dictionary
--spec use_strategy(atom(), any()) -> property().
-use_strategy(Strat, Prop) ->
-  put(target_strategy, Strat),
-  Strat:init_strategy(Prop).
+-spec use_strategy(strategy(), any()) -> property().
+use_strategy(Strategy, Prop) ->
+  put(target_strategy, Strategy),
+  Strategy:init_strategy(Prop).
 
 -spec get_target(target:key(), options()) -> target().
 get_target(Key, Opts) ->

@@ -23,13 +23,13 @@
 %% lib
 -export([integer/0, integer/2, float/0, float/2]).
 
--include_lib("proper/include/proper_common.hrl").
+-include_lib("proper/include/proper_common.hrl").  % code below uses ?LET
 
 %% SA search strategy
 -type temperature() :: float().
 
--record(sa_target, {first = null,
-                    next = null,
+-record(sa_target, {first = null,  % proper_types:type()
+                    next = null,   % fun((_, _) -> proper_types:type()
                     current_generated = null,
                     last_generated = null
                    }).
@@ -79,13 +79,14 @@ acceptance_function_standard(EnergyCurrent, EnergyNew, Temperature) ->
       %% always accept better results
       true;
     false ->
-      %% probabilistic acceptance (always between 0 and 0.5)
-      AcceptanceProbability = try
-                                 %%  1 / (1 + math:exp(abs(EnergyCurrent - EnergyNew) / Temperature))
-                                 math:exp(-(EnergyCurrent - EnergyNew) / Temperature)
-                               catch
-                                 error:badarith -> 0.0
-                               end,
+      %% probabilistic acceptance (always between 0.0 and 0.5)
+      AcceptanceProbability = 
+	try
+	  %%  1 / (1 + math:exp(abs(EnergyCurrent - EnergyNew) / Temperature))
+	  math:exp(-(EnergyCurrent - EnergyNew) / Temperature)
+	catch
+	  error:badarith -> 0.0
+	end,
       %% if random probability is less, accept
       ?RANDOM_PROBABILITY < AcceptanceProbability
   end.
@@ -96,12 +97,13 @@ acceptance_function_normalized(EnergyCurrent, EnergyNew, Temperature) ->
       %% always accept better results
       true;
     false ->
-      %% probabilistic acceptance (always between 0 and 0.5)
-      AcceptanceProbability = try
-				1 / (1 + math:exp( (1 -  (EnergyNew/EnergyCurrent)) / Temperature))
-			      catch
-				error:badarith -> 0.0
-			      end,
+      %% probabilistic acceptance (always between 0.0 and 0.5)
+      AcceptanceProbability =
+	try
+	  1 / (1 + math:exp( (1 -  (EnergyNew/EnergyCurrent)) / Temperature))
+	catch
+	  error:badarith -> 0.0
+	end,
       %% if random probability is less, accept
       ?RANDOM_PROBABILITY < AcceptanceProbability
   end.
@@ -116,8 +118,8 @@ temperature_function_fast_sa(_OldTemperature,
                              _K_Max,
                              K_Current,
                              Accepted) ->
-  AdjustedK = case not Accepted of
-                true ->
+  AdjustedK = case Accepted of
+                false ->
                   case get(target_se_reheat_counter) of
                     undefined ->
                       put(target_se_reheat_counter, 1),
@@ -129,7 +131,7 @@ temperature_function_fast_sa(_OldTemperature,
                       put(target_se_reheat_counter, N + 1),
                       K_Current + 1
                   end;
-                false -> K_Current + 1
+                true -> K_Current + 1
               end,
   {1 / max((AdjustedK / 4.0), 1.0), AdjustedK}.
 
@@ -150,7 +152,7 @@ temperature_function_reheat_sa(OldTemperature,
                                NewEnergyLevel,
                                K_Max,
                                K_Current,
-                               Accepted) when is_integer(K_Current)->
+                               Accepted) when is_integer(K_Current) ->
   temperature_function_reheat_sa(OldTemperature,
                                  OldEnergyLevel,
                                  NewEnergyLevel,
@@ -164,8 +166,8 @@ temperature_function_reheat_sa(_OldTemperature,
                                {K_Current, K_Counter},
                                Accepted) ->
   Scaling = 1.0 - (K_Counter / K_Max),
-  AdjustedK = case not Accepted of
-                true ->
+  AdjustedK = case Accepted of
+                false ->
                   case get(target_se_reheat_counter) of
                     undefined ->
                       put(target_se_reheat_counter, 1),
@@ -177,7 +179,7 @@ temperature_function_reheat_sa(_OldTemperature,
                       put(target_se_reheat_counter, N + 1),
                       K_Current + 1
                   end;
-                false -> K_Current + 1
+                true -> K_Current + 1
               end,
   {1 / max((AdjustedK / 4.0), 1.0), {AdjustedK, K_Counter + 1}}.
 
@@ -272,21 +274,23 @@ init_strategy(Prop) ->
                               }),
   Prop.
 
--spec init_target(target_strategy:options()) -> target_strategy:target().
-init_target([]) ->
+-spec init_target(target:tmap()) -> target_strategy:target().
+init_target(TMap) when map_size(TMap) =:= 0 ->
   init_target(?MODULE:integer());
-init_target(Opts) ->
-  create_target(parse_opts(Opts)).
+init_target(#{gen := Gen}) ->
+  init_target(target_sa_gen:from_proper_generator(Gen));
+init_target(#{first := First, next := Next}) ->
+  create_target(#sa_target{first = First, next = Next}).
 
-create_target(TargetState) ->
-  {ok, InitialValue} = proper_gen:clean_instance(proper_gen:safe_generate(TargetState#sa_target.first)),
-  {TargetState#sa_target{last_generated = InitialValue},
+create_target(SATarget) ->
+  {ok, InitialValue} = proper_gen:clean_instance(proper_gen:safe_generate(SATarget#sa_target.first)),
+  {SATarget#sa_target{last_generated = InitialValue},
    fun next_func/1,
    %% dummy local fitness function
    fun (S, _) -> S end}.
 
 %% generating next element and updating the target state
-next_func(State) ->
+next_func(SATarget) ->
   %% retrieving temperature
   GlobalData = get(target_sa_data),
   Temperature = GlobalData#sa_data.temperature,
@@ -294,31 +298,13 @@ next_func(State) ->
   %% MaxSize = trunc(?MAX_SIZE * Temperature) + 1,
   %% io:format("MaxSize: ~p Temperature: ~p ~n", [MaxSize, Temperature]),
   %% getting the generator for the next element (dependend on size and the last generated element)
-  %% io:format("~p  -- ~p ~n", [State#sa_target.last_generated, State#sa_target.next]),
-  NextGenerator = (State#sa_target.next)(State#sa_target.last_generated, Temperature),
+  %% io:format("~p  -- ~p ~n", [SATarget#sa_target.last_generated, SATarget#sa_target.next]),
+  NextGenerator = (SATarget#sa_target.next)(SATarget#sa_target.last_generated, Temperature),
   %% generate the next element
   {ok, Generated} = proper_gen:clean_instance(proper_gen:safe_generate(NextGenerator)),
   %% return according to interface
-  {State#sa_target{current_generated = Generated}, Generated}.
+  {SATarget#sa_target{current_generated = Generated}, Generated}.
 
-parse_opts(Opts) ->
-  case proper_types:is_type(Opts) of
-    true ->
-      %% automatically generate neighborhood function
-      parse_opts(target_sa_gen:from_proper_generator(Opts), #sa_target{});
-    false ->
-      parse_opts(Opts, #sa_target{})
-  end.
-
-parse_opts([], Opts) -> Opts;
-parse_opts([Opt|T], Opts) ->
-  parse_opts(T, parse_opt(Opt, Opts)).
-
-parse_opt(Opt, Opts) ->
-  case Opt of
-    {first, G} -> Opts#sa_target{first = G};
-    {next, G} ->  Opts#sa_target{next = G}
-  end.
 
 -spec store_target(target:key(), target_strategy:target()) -> 'ok'.
 store_target(Key, Target) ->
@@ -380,30 +366,31 @@ update_global_fitness(Fitness) ->
   %% timer:sleep(100),
   ok.
 
+%% update the last generated value with the current generated value
+%% (hence accepting new state)
 update_all_targets(TargetDict) ->
-  %% update the last generated value with the current generated value (hence accepting new state)
   update_all_targets(TargetDict, dict:fetch_keys(TargetDict)).
 
 update_all_targets(Dict,  []) ->
   Dict;
 update_all_targets(Dict, [K|T]) ->
-  FF = dict:fetch(K, Dict),
-  {S, N, F} = FF,
-  update_all_targets(dict:store(K, {S#sa_target{last_generated = S#sa_target.current_generated}, N, F}, Dict),
-                     T).
+  {S, N, F} = dict:fetch(K, Dict),
+  NewVal = {S#sa_target{last_generated = S#sa_target.current_generated}, N, F},
+  update_all_targets(dict:store(K, NewVal, Dict), T).
 
--spec get_shrinker(target_strategy:options()) -> proper_types:type().
-get_shrinker(Opts) ->
-  ((parse_opts(Opts))#sa_target.first).
+-spec get_shrinker(target:tmap()) -> proper_types:type().
+get_shrinker(#{first := First}) -> First;
+get_shrinker(#{gen := Gen}) -> Gen.
+  %% Perhaps the following implementation is more kosher
+  %% #{first := First} = target_sa_gen:from_proper_generator(Gen),
+  %% First.
+
 
 %%--------------------------------------------------------------------------
 %% library
 %%--------------------------------------------------------------------------
 
--type first() :: {'first', proper_types:type()}.
--type next()  :: {'next' , fun((_, _) -> proper_types:type())}.
-%% XXX: Why is the following a list instead of typle/record?
--type first_next() :: [first() | next()].
+-type first_next() :: target:tmap().
 
 -spec integer() -> first_next().
 integer() ->
@@ -411,8 +398,7 @@ integer() ->
 
 -spec integer(proper_types:extint(), proper_types:extint()) -> first_next().
 integer(L, R) ->
-  [{first, proper_types:integer(L, R)},
-   {next, integer_next(L, R)}].
+  #{first => proper_types:integer(L, R), next => integer_next(L, R)}.
 
 integer_next(L, R) ->
   fun (OldInstance, Temperature) ->
@@ -423,8 +409,7 @@ integer_next(L, R) ->
                      Limit = trunc(abs(L - R) * Temperature * 0.1) + 1,
                      {-Limit, Limit}
                  end,
-      ?LET(X, proper_types:integer(LL, LR),
-           make_inrange(OldInstance, X, L, R))
+      ?LET(X, proper_types:integer(LL, LR), make_inrange(OldInstance, X, L, R))
   end.
 
 -spec float() -> first_next().
@@ -433,8 +418,7 @@ float() ->
 
 -spec float(proper_types:extnum(), proper_types:extnum()) -> first_next().
 float(L, R) ->
-  [{first, proper_types:float(L, R)},
-   {next, float_next(L, R)}].
+  #{first => proper_types:float(L, R), next => float_next(L, R)}.
 
 float_next(L, R) ->
   fun (OldInstance, Temperature) ->
@@ -445,8 +429,7 @@ float_next(L, R) ->
                      Limit = abs(L - R) * Temperature * 0.1,
                      {-Limit, Limit}
                  end,
-      ?LET(X, proper_types:float(LL, LR),
-           make_inrange(OldInstance, X, L, R))
+      ?LET(X, proper_types:float(LL, LR), make_inrange(OldInstance, X, L, R))
   end.
 
 make_inrange(Val, L, R) when (R =:= inf orelse Val =< R) andalso (L =:= inf orelse Val >= L) -> Val;

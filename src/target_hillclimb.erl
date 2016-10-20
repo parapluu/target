@@ -45,7 +45,7 @@ retrieve_target(Key) ->
   end.
 
 %% strategy functions
--spec init_target(target_strategy:options()) -> target_strategy:target().
+-spec init_target(target:tmap()) -> target_strategy:target().
 init_target(_) ->
   {{0, none, none},
    fun ({LastAcc, AccUtility, _LastGen}) ->
@@ -60,7 +60,7 @@ init_target(_) ->
        end
    end}.
 
--spec get_shrinker(target_strategy:options()) -> proper_types:type().
+-spec get_shrinker(target:tmap()) -> proper_types:type().
 get_shrinker(_) ->
   proper_types:integer().
 

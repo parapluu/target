@@ -33,16 +33,16 @@
 -define(TEMP(T), calculate_temperature(T)).
 -define(SLTEMP(T), adjust_temperature(T)).
 
--spec from_proper_generator(proper_types:type()) -> proplists:proplist().
+-spec from_proper_generator(proper_types:type()) -> target:tmap().
 from_proper_generator(RawGenerator) ->
-  ok = case get(target_sa_gen_cache) of
-         undefined ->
-           put(target_sa_gen_cache, #{}),
-           ok;
-         _ ->
-           %% use existing cache
-           ok
-       end,
+  case get(target_sa_gen_cache) of
+    undefined ->
+      put(target_sa_gen_cache, #{}),
+      ok;
+    _ ->
+      %% use existing cache
+      ok
+  end,
   Generator = cook(RawGenerator),
   Hash = erlang:phash2(Generator),
   case get(?STORAGE) of
@@ -51,7 +51,7 @@ from_proper_generator(RawGenerator) ->
     M ->
       put(?STORAGE, M#{ Hash => #{} })
   end,
-  [{first, Generator}, {next, replace_generators(Generator, Hash)}].
+  #{first => Generator, next => replace_generators(Generator, Hash)}.
 
 cook(Type = {'$type',_Props}) ->
   Type;
@@ -59,11 +59,9 @@ cook(RawType) ->
   if
     is_tuple(RawType) ->
       proper_types:tuple(tuple_to_list(RawType));
-    %% CAUTION: this must handle improper lists
-    is_list(RawType)  ->
+    is_list(RawType) ->  %% CAUTION: this must handle improper lists
       proper_types:fixed_list(RawType);
-    %% default case (covers integers, floats, atoms, binaries, ...):
-    true              ->
+    true ->  %% default case (covers integers, floats, atoms, binaries, ...)
       proper_types:exactly(RawType)
   end.
 
@@ -169,8 +167,10 @@ make_inrange(Val, L, R) when (R=:=inf orelse Val =< R) andalso (L=:=inf orelse V
 make_inrange(Val, L, _R) when Val < L -> L;
 make_inrange(Val, _L, R) when Val > R -> R.
 
-make_inrange(Val, Offset, L, R) when L=/=inf andalso Val + Offset < L -> make_inrange(Val - Offset, L, R);
-make_inrange(Val, Offset, L, R) when R=/=inf andalso Val + Offset > R -> make_inrange(Val - Offset, L, R);
+make_inrange(Val, Offset, L, R) when L =/= inf andalso Val + Offset < L ->
+  make_inrange(Val - Offset, L, R);
+make_inrange(Val, Offset, L, R) when R =/= inf andalso Val + Offset > R ->
+  make_inrange(Val - Offset, L, R);
 make_inrange(Val, Offset, L, R) -> make_inrange(Val + Offset, L, R).
 
 %% integers
@@ -181,7 +181,7 @@ integer_gen_sa({'$type', TypeProps}) ->
   {env, {Min, Max}} = proplists:lookup(env, TypeProps),
   fun (Base, TD) ->
       Temp = ?TEMP(TD),
-      OffsetLimit = case Min=:=inf orelse Max=:=inf of
+      OffsetLimit = case Min =:= inf orelse Max =:= inf of
                       true ->
                         trunc(1000 * Temp);
                       false ->
@@ -199,7 +199,7 @@ float_gen_sa({'$type', TypeProps}) ->
   {env, {Min, Max}} = proplists:lookup(env, TypeProps),
   fun (Base, _TD) ->
       %% Temp = ?TEMP(TD),
-      OffsetLimit = case Min=:=inf orelse Max=:=inf of
+      OffsetLimit = case Min =:= inf orelse Max =:= inf of
                       true ->
                         10.0;
                       false ->
@@ -276,7 +276,7 @@ list_gen_internal(L=[H|T], Temp, InternalType, GrowthCoefficient) ->
     del ->
       list_gen_internal(T, Temp, InternalType, GrowthCoefficient);
     modify ->
-      {next, ElementType} = proplists:lookup(next, from_proper_generator(InternalType)),
+      #{next := ElementType} = from_proper_generator(InternalType),
       [ElementType(H, Temp) | list_gen_internal(T, Temp, InternalType, GrowthCoefficient)];
     nothing ->
       [H | list_gen_internal(T, Temp, InternalType, GrowthCoefficient)]
@@ -288,7 +288,7 @@ is_shrink_list_type(Type) ->
 
 shrink_list_gen_sa(Type) ->
   {ok, Env} = proper_types:find_prop(env, Type),
-  {next, TypeGen} = proplists:lookup(next, from_proper_generator(Env)),
+  #{next := TypeGen} = from_proper_generator(Env),
   TypeGen.
 
 %% vector
@@ -297,7 +297,7 @@ is_vector_type(Type) ->
 
 vector_gen_sa(Type) ->
   {ok, InternalType} = proper_types:find_prop(internal_type, Type),
-  {next, ElementType} = proplists:lookup(next, from_proper_generator(InternalType)),
+  #{next := ElementType} = from_proper_generator(InternalType),
   fun GEN([], _) ->
       [];
       GEN([H|T], Temp) ->
@@ -335,14 +335,14 @@ binary_vector() ->
   proper_types:vector(42, proper_types:integer(0, 255)).
 
 binary_gen_sa(_Type) ->
-  {next, ListGen} = proplists:lookup(next, from_proper_generator(binary_list())),
+  #{next := ListGen} = from_proper_generator(binary_list()),
   fun (Base, Temp) ->
       ListRepr = binary_to_list(Base),
       list_to_binary(ListGen(ListRepr, ?SLTEMP(Temp)))
   end.
 
 binary_len_gen_sa(_Type) ->
-  {next, VectorGen} = proplists:lookup(next, from_proper_generator(binary_vector())),
+  #{next := VectorGen} = from_proper_generator(binary_vector()),
   fun (Base, Temp) ->
       ListRepr = binary_to_list(Base),
       list_to_binary(VectorGen(ListRepr, ?SLTEMP(Temp)))
@@ -358,8 +358,9 @@ tuple_gen_sa(Type) ->
   {ok, InternalTuple} = proper_types:find_prop(internal_types, Type),
   InternalTypes = tuple_to_list(InternalTuple),
   ElementGens = lists:map(fun (E) ->
-                              {next, Gen} = proplists:lookup(next, from_proper_generator(E)),
-                              Gen end,
+                              #{next := Gen} = from_proper_generator(E),
+                              Gen
+			  end,
                           InternalTypes),
   fun ({}, _) -> {};
       (Base, Temp) ->
@@ -381,7 +382,7 @@ is_fixed_list_type(Type) ->
 fixed_list_gen_sa(Type) ->
   {ok, InternalTypes} = proper_types:find_prop(internal_types, Type),
   ElementGens = lists:map(fun (E) ->
-                              {next, Gen} = proplists:lookup(next, from_proper_generator(E)),
+                              #{next := Gen} = from_proper_generator(E),
                               Gen
                           end,
                           InternalTypes),
@@ -431,7 +432,7 @@ union_gen_sa(Type) ->
           case get_cached_union(Type, Base) of
             {ok, ET} ->
               %% this type generated Base
-              {next, ETGen} = proplists:lookup(next, from_proper_generator(ET)),
+              #{next := ETGen} = from_proper_generator(ET),
               Modified = ETGen(Base, Temp),
               set_cache_union(Type, Modified, ET),
               Modified;
@@ -469,7 +470,7 @@ set_cache_let(Type, Base, Combined) ->
 let_gen_sa(Type) ->
   {ok, Combine} = proper_types:find_prop(combine, Type),
   {ok, PartsType} = proper_types:find_prop(parts_type, Type),
-  {next, PartsGen} = proplists:lookup(next, from_proper_generator(PartsType)),
+  #{next := PartsGen} = from_proper_generator(PartsType),
   fun (Base, Temp) ->
       LetOuter = case get_cached_let(Type, Base) of
                    {ok, Stored} ->
@@ -492,7 +493,7 @@ let_gen_sa(Type) ->
       Combined = Combine(LetOuter),
       NewValue = case proper_types:is_type(Combined) of
                    true ->
-                     {next, InternalGen} = proplists:lookup(next, from_proper_generator(Combined)),
+                     #{next := InternalGen} = from_proper_generator(Combined),
                      InternalGen(Base, Temp);
                    false ->
                      Combined
@@ -533,16 +534,13 @@ get_size(Type, Temp) ->
   set_cache_size(Type, Size),
   Size.
 
-save_sized_generation(Base, Temp, SAGen) ->
-  {next, Internal} = proplists:lookup(next, SAGen),
+save_sized_generation(Base, Temp, #{first := First, next := Next}) ->
   try
     %% can fail with for example a fixed list
-    Internal(Base, Temp)
+    Next(Base, Temp)
   catch
     error:function_clause ->
-      %% fixed list will fail here
-      {first, InternalInit} = proplists:lookup(first, SAGen),
-      {ok, E} = proper_gen:clean_instance(proper_gen:safe_generate(InternalInit)),
+      {ok, E} = proper_gen:clean_instance(proper_gen:safe_generate(First)),
       E
   end.
 
@@ -552,7 +550,7 @@ wrapper_gen_sa(Type) ->
       if
         is_function(Gen, 1) ->
           fun (Base, Temp) ->
-              {next, Internal} = proplists:lookup(next, from_proper_generator(Gen(Type))),
+              #{next := Internal} = from_proper_generator(Gen(Type)),
               Internal(Base, Temp)
           end;
         is_function(Gen, 2) ->
@@ -566,7 +564,7 @@ wrapper_gen_sa(Type) ->
       if
         is_function(Gen, 0) ->
           fun (Base, Temp) ->
-              {next, Internal} = proplists:lookup(next, from_proper_generator(Gen())),
+              #{next := Internal} = from_proper_generator(Gen()),
               Internal(Base, Temp)
           end;
         is_function(Gen, 1) ->
