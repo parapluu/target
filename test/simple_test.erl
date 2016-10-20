@@ -20,20 +20,24 @@
 
 -define(PROPER_OPTIONS, [quiet, {numtests, 1000}]).
 
+-spec enumerate_test() -> 'ok'.
 enumerate_test() ->
-  proper:quickcheck(prop_enum(),  ?PROPER_OPTIONS).
+  true = proper:quickcheck(prop_enum(), ?PROPER_OPTIONS),
+  ok.
 
 prop_enum() ->
   ?TARGET_STRATEGY(target_enumerate,
-		   ?FORALL(I, ?NAMED_TARGET(X, integer(0,X)),
+		   ?FORALL(I, ?NAMED_TARGET(X, integer(0, X)),
 			   begin
 			     io:format("I: ~p~n", [I]),
-			     ?MAXIMIZE(I,X)
+			     ?MAXIMIZE(I, X)
 			   end)).
 
+-spec sa_test() -> 'ok'.
 sa_test() ->
   put(target_sa_steps, 10000),
-  proper:quickcheck(prop_sa(), ?PROPER_OPTIONS).
+  true = proper:quickcheck(prop_sa(), ?PROPER_OPTIONS),
+  ok.
 
 prop_sa() ->
   ?TARGET_STRATEGY(target_sa,
@@ -43,12 +47,11 @@ prop_sa() ->
 			     ?MAXIMIZE(-(I+J))
 			   end)).
 
-check(I) ->
-  I < 1000.
-
+-spec shrinking_test() -> 'ok'.
 shrinking_test() ->
   false = proper:quickcheck(prop_shrinking(), ?PROPER_OPTIONS),
-  [1000] = proper:counterexample().
+  [1000] = proper:counterexample(),
+  ok.
 
 prop_shrinking() ->
   ?TARGET_STRATEGY(target_sa,
@@ -59,8 +62,11 @@ prop_shrinking() ->
 					     check(I)
 					   end))).
 
+check(I) ->
+  I < 1000.
+
 %% sized_test() ->
-%%   proper:quickcheck(prop_sized(),  [{to_file, user}]).
+%%   proper:quickcheck(prop_sized(), [{to_file, user}]).
 
 %% sized_gen() ->
 %%   ?SIZED(Size, sized_gen(Size)).
