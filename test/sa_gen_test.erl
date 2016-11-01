@@ -10,28 +10,15 @@
 
 -module(sa_gen_test).
 
--export([integer_test/0,
-         list_test/0,
-         combine_test/0,
-         basic1_test/0,
-         basic2_test/0,
-         let_test/0,
-         graph_test/0,
-         suchthat_test/0,
-         union_test/0,
-         weighted_union_test/0,
-         lazy_test/0,
-         sized_test/0,
-         tuple_test/0,
-         edge_test/0]).
+-export([]).
 
 -include_lib("proper/include/proper.hrl").
 -include_lib("target/include/target.hrl").
--inlcude_lib("eunit/include/eunit.hrl").
+-include_lib("eunit/include/eunit.hrl").
 
 -define(PROPER_OPTIONS, [quiet, {numtests, 1000}]).
 
-%% -spec integer_test() -> _.
+-spec integer_test() -> integer().
 integer_test() ->
   put(target_sa_testing, true),
   proper:global_state_init_size(10),
@@ -62,8 +49,7 @@ basic1_test() ->
   put(target_sa_testing, true),
   false = proper:quickcheck(prop_big_list(), ?PROPER_OPTIONS),
   [L] = proper:counterexample(),
-  48 = length(L),
-  ok.
+  ?assertMatch(48,length(L)).
 
 prop_big_list() ->
   Gen = proper_types:list(atom),
@@ -80,8 +66,7 @@ basic2_test() ->
   put(target_sa_testing, true),
   false = proper:quickcheck(prop_use_ngenerator(), ?PROPER_OPTIONS),
   [L] = proper:counterexample(),
-  48 = length(L),
-  ok.
+  ?assertMatch(48,length(L)).
 
 prop_use_ngenerator() ->
   ?FORALL_SA(List, ?TARGET(#{gen => proper_types:list(atom)}),
@@ -95,8 +80,7 @@ prop_use_ngenerator() ->
 -spec let_test() -> 'ok'.
 let_test() ->
   put(target_sa_testing, true),
-  true = proper:quickcheck(prop_let(), ?PROPER_OPTIONS),
-  ok.
+  ?assert(proper:quickcheck(prop_let(), ?PROPER_OPTIONS)).
 
 prop_let() ->
   ?FORALL_SA(V, ?TARGET(#{gen => even_int()}),
@@ -112,8 +96,7 @@ even_int() ->
 -spec suchthat_test() -> 'ok'.
 suchthat_test() ->
   put(target_sa_testing, true),
-  true = proper:quickcheck(prop_suchthat(), ?PROPER_OPTIONS),
-  ok.
+  ?assert(proper:quickcheck(prop_suchthat(), ?PROPER_OPTIONS)).
 
 prop_suchthat() ->
   ?FORALL_SA(V, ?TARGET(#{gen => suchthat_gen()}),
@@ -130,8 +113,7 @@ suchthat_gen() ->
 -spec union_test() -> 'ok'.
 union_test() ->
   put(target_sa_testing, true),
-  true = proper:quickcheck(prop_union(), ?PROPER_OPTIONS),
-  ok.
+  ?assert(proper:quickcheck(prop_union(), ?PROPER_OPTIONS)).
 
 prop_union() ->
   L = [a, b, c],
@@ -141,8 +123,7 @@ prop_union() ->
 -spec weighted_union_test() -> 'ok'.
 weighted_union_test() ->
   put(target_sa_testing, true),
-  true = proper:quickcheck(prop_weighted_union(), ?PROPER_OPTIONS),
-  ok.
+  ?assert(proper:quickcheck(prop_weighted_union(), ?PROPER_OPTIONS)).
 
 prop_weighted_union() ->
   Gen = proper_types:weighted_union([{1, a}, {2, b}, {3, c}]),
@@ -152,8 +133,7 @@ prop_weighted_union() ->
 -spec tuple_test() -> 'ok'.
 tuple_test() ->
   put(target_sa_testing, true),
-  true = proper:quickcheck(prop_tuple(), ?PROPER_OPTIONS),
-  ok.
+  ?assert(proper:quickcheck(prop_tuple(), ?PROPER_OPTIONS)).
 
 prop_tuple() ->
   ?FORALL_SA({L, R}, ?TARGET(#{gen => tuple_type_res()}), L > R).
@@ -168,8 +148,7 @@ tuple_type() ->
 -spec lazy_test() -> 'ok'.
 lazy_test() ->
   put(target_sa_testing, true),
-  true = proper:quickcheck(prop_lazy(), ?PROPER_OPTIONS),
-  ok.
+  ?assert(proper:quickcheck(prop_lazy(), ?PROPER_OPTIONS)).
 
 prop_lazy() ->
   Gen = ?LAZY(?LET(I, integer(), I * 2)),
@@ -181,8 +160,7 @@ sized_test() ->
   put(target_sa_testing, true),
   false = proper:quickcheck(prop_sized(), ?PROPER_OPTIONS),
   [C] = proper:counterexample(),
-  42 = length(C),
-  ok.
+  ?assert(42 =< length(C)).
 
 prop_sized() ->
   ?FORALL_SA(L, ?TARGET(#{gen => sized_type()}),
@@ -197,8 +175,7 @@ sized_type() ->
 
 -spec edge_test() -> 'ok'.
 edge_test() ->
-  true = proper:quickcheck(prop_edge(), ?PROPER_OPTIONS),
-  ok.
+  ?assert(proper:quickcheck(prop_edge(), ?PROPER_OPTIONS)).
 
 prop_edge() ->
   Gen = simple_edge([1,2,3,4,5,6,7,8,9]),
@@ -210,8 +187,7 @@ graph_test() ->
   put(target_sa_steps, 1000),
   put(target_sa_tempfunc, default),
   put(target_sa_acceptfunc, default),
-  true = proper:quickcheck(prop_graph(), ?PROPER_OPTIONS),
-  ok.
+  ?assert(proper:quickcheck(prop_graph(), ?PROPER_OPTIONS)).
 
 prop_graph() ->
   ?FORALL_SA({V, E},
