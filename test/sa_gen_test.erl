@@ -31,7 +31,7 @@
 
 -define(PROPER_OPTIONS, [quiet, {numtests, 1000}]).
 
-%-spec integer_test() -> _.
+%% -spec integer_test() -> _.
 integer_test() ->
   put(target_sa_testing, true),
   proper:global_state_init_size(10),
@@ -68,11 +68,11 @@ basic1_test() ->
 prop_big_list() ->
   Gen = proper_types:list(atom),
   ?FORALL_SA(List, ?TARGET(target_sa_gen:from_proper_generator(Gen)),
-	     begin
-	       L = length(List),
-	       ?MAXIMIZE(-abs(L - 50)),
-	       abs(L-50) > 2
-	     end).
+             begin
+               L = length(List),
+               ?MAXIMIZE(-abs(L - 50)),
+               abs(L-50) > 2
+             end).
 
 
 -spec basic2_test() -> 'ok'.
@@ -86,9 +86,9 @@ basic2_test() ->
 prop_use_ngenerator() ->
   ?FORALL_SA(List, ?TARGET(#{gen => proper_types:list(atom)}),
              begin
-	       L = length(List),
-	       ?MAXIMIZE(-abs(L - 50)),
-	       abs(L - 50) > 2
+               L = length(List),
+               ?MAXIMIZE(-abs(L - 50)),
+               abs(L - 50) > 2
              end).
 
 
@@ -100,10 +100,10 @@ let_test() ->
 
 prop_let() ->
   ?FORALL_SA(V, ?TARGET(#{gen => even_int()}),
-	     begin
-	       ?MAXIMIZE(-V),
-	       V rem 2 =:= 0
-	     end).
+             begin
+               ?MAXIMIZE(-V),
+               V rem 2 =:= 0
+             end).
 
 even_int() ->
   ?LET(I, integer(), I*2).
@@ -117,11 +117,11 @@ suchthat_test() ->
 
 prop_suchthat() ->
   ?FORALL_SA(V, ?TARGET(#{gen => suchthat_gen()}),
-	     begin
-	       io:format("~p~n", [V]),
-	       ?MAXIMIZE(V),
-	       V rem 2 =:= 0
-	     end).
+             begin
+               io:format("~p~n", [V]),
+               ?MAXIMIZE(V),
+               V rem 2 =:= 0
+             end).
 
 suchthat_gen() ->
   ?SUCHTHAT(I, integer(), I rem 2 =:= 0).
@@ -186,10 +186,10 @@ sized_test() ->
 
 prop_sized() ->
   ?FORALL_SA(L, ?TARGET(#{gen => sized_type()}),
-	     begin
-	       ?MAXIMIZE(lists:sum(L)),
-	       length(L) < 42
-	     end).
+             begin
+               ?MAXIMIZE(lists:sum(L)),
+               length(L) < 42
+             end).
 
 sized_type() ->
   ?SIZED(S, lists:seq(0, S)).
@@ -215,25 +215,27 @@ graph_test() ->
 
 prop_graph() ->
   ?FORALL_SA({V, E},
-	     ?TARGET(target_sa_gen:from_proper_generator(simple_graph())),
-	     begin
-	       ?MAXIMIZE((length(E) - length(V))),
-	       %% io:format("~p", [length(V) + length(E)]),
-	       true
-	     end).
+             ?TARGET(target_sa_gen:from_proper_generator(simple_graph())),
+             begin
+               ?MAXIMIZE((length(E) - length(V))),
+               %% io:format("~p", [length(V) + length(E)]),
+               true
+             end).
 
 %% simple generator for a graph
 simple_graph() ->
   ?LET(RawV, non_empty(list(integer(1, inf))),
        begin
-	 V = lists:usort(RawV),
-	 case length(V) > 1 of
-	   true ->
-	     ?LET(E, simple_edges(V),
-		  {proper_types:shrink_list(V), proper_types:shrink_list(E)});
-	   _ ->
-	     {proper_types:shrink_list(V), []}
-	 end
+         V = lists:usort(RawV),
+         case length(V) > 1 of
+           true ->
+             ?LET(E, simple_edges(V),
+                  begin
+                    exactly({V, E})
+                  end);
+           _ ->
+             exactly({V, []})
+         end
        end).
 
 simple_edges(V) ->
