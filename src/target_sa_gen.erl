@@ -151,6 +151,12 @@ calculate_temperature({Depth, Temp}) ->
 calculate_temperature(Temp) ->
   temperature_scaling(Temp).
 
+%% sample
+sample_from_type(Type, Temp) ->
+  #{next := Gen} = from_proper_generator(Type),
+  {ok, Generated} = proper_gen:clean_instance(proper_gen:safe_generate(Type)),
+  Gen(Generated, Temp).
+
 %% exactly
 is_exactly_type(Type) ->
   proper_types:get_prop(kind, Type) =:= basic andalso
@@ -360,7 +366,7 @@ tuple_gen_sa(Type) ->
   ElementGens = lists:map(fun (E) ->
                               #{next := Gen} = from_proper_generator(E),
                               Gen
-			  end,
+                          end,
                           InternalTypes),
   fun ({}, _) -> {};
       (Base, Temp) ->
@@ -383,18 +389,25 @@ fixed_list_gen_sa(Type) ->
   {ok, InternalTypes} = proper_types:find_prop(internal_types, Type),
   ElementGens = lists:map(fun (E) ->
                               #{next := Gen} = from_proper_generator(E),
-                              Gen
+                              {Gen, E}
                           end,
                           InternalTypes),
   fun ([], _) -> [];
       (Base, Temp) ->
-      lists:map(fun ({Gen, Elem}) ->
-                    case list_choice(tuple, ?TEMP(Temp)) of
-                      nothing -> Elem;
-                      modify -> Gen(Elem, Temp)
-                    end
-                end,
-                lists:zip(ElementGens, Base))
+      {NewFixedList, _} = lists:mapfoldl(
+                            fun ({_, ElementType}, []) ->
+                                {sample_from_type(ElementType, ?TEMP(Temp)), []};
+                                ({ElementGen, ElementType}, [B|T]) ->
+                                  case proper_types:is_instance(B, ElementType) of
+                                    true ->
+                                      {ElementGen(B, ?TEMP(Temp)), T};
+                                    false ->
+                                      {sample_from_type(ElementType, ?TEMP(Temp)), [B|T]}
+                                    end
+                            end,
+                            Base,
+                            ElementGens),
+      NewFixedList
   end.
 
 %% union
@@ -462,10 +475,15 @@ get_cached_let(Type, Combined) ->
     _ -> not_found
   end.
 
-set_cache_let(Type, Base, Combined) ->
+set_cache_let(Type, Combined, Base) ->
   Key = erlang:phash2({let_type, Type, Combined}),
   M = get(target_sa_gen_cache),
   put(target_sa_gen_cache, M#{Key => Base}).
+
+del_cache_let(Type, Combined) ->
+  Key = erlang:phash2({let_type, Type, Combined}),
+  M = get(target_sa_gen_cache),
+  put(target_sa_gen_cache, maps:remove(Key, M)).
 
 let_gen_sa(Type) ->
   {ok, Combine} = proper_types:find_prop(combine, Type),
@@ -474,6 +492,7 @@ let_gen_sa(Type) ->
   fun (Base, Temp) ->
       LetOuter = case get_cached_let(Type, Base) of
                    {ok, Stored} ->
+                     del_cache_let(Type, Base),
                      C = rand:uniform(),
                      C_Cnt = case ?TEMP(Temp) of
                                0.0 -> 0.0;
@@ -486,11 +505,10 @@ let_gen_sa(Type) ->
                          Stored
                      end;
                    not_found ->
-                     %% first time running the let
-                     {ok, Generated} = proper_gen:clean_instance(proper_gen:safe_generate(PartsType)),
-                     Generated
+                     sample_from_type(PartsType, ?SLTEMP(Temp))
                  end,
-      Combined = Combine(LetOuter),
+      RawCombined = Combine(LetOuter),
+      Combined = proper_types:cook_outer(RawCombined),
       NewValue = case proper_types:is_type(Combined) of
                    true ->
                      #{next := InternalGen} = from_proper_generator(Combined),
@@ -498,7 +516,7 @@ let_gen_sa(Type) ->
                    false ->
                      Combined
                  end,
-      set_cache_let(Type, LetOuter, NewValue),
+      set_cache_let(Type, NewValue, LetOuter),
       NewValue
   end.
 
