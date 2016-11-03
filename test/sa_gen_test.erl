@@ -18,27 +18,38 @@
 
 -define(PROPER_OPTIONS, [quiet, {numtests, 1000}]).
 
--spec integer_test() -> integer().
+-spec integer_test() -> 'ok'.
 integer_test() ->
   put(target_sa_testing, true),
   proper:global_state_init_size(10),
   Gen = proper_types:integer(),
   #{next := TG} = target_sa_gen:from_proper_generator(Gen),
-  appl(TG, 0, 100).
+  %% apply the generator 100 time and check
+  %% that nothing crashes
+  appl(TG, 0, 100),
+  ok.
 
+-spec list_test() -> 'ok'.
 list_test() ->
   put(target_sa_testing, true),
   proper:global_state_init_size(10),
   Gen = proper_types:list(atom),
   #{next := TG} = target_sa_gen:from_proper_generator(Gen),
-  appl(TG, [], 100).
+  %% apply the generator 100 time and check
+  %% that nothing crashes
+  appl(TG, 0, 100),
+  ok.
 
+-spec combine_test() -> 'ok'.
 combine_test() ->
   put(target_sa_testing, true),
   proper:global_state_init_size(10),
   Gen = proper_types:list(proper_types:list(proper_types:integer())),
   #{next := TG} = target_sa_gen:from_proper_generator(Gen),
-  appl(TG, [], 100).
+  %% apply the generator 100 time and check
+  %% that nothing crashes
+  appl(TG, 0, 100),
+  ok.
 
 appl(_, A, 0) -> A;
 appl(TG, A, X) -> appl(TG, TG(A, 0.5), X - 1).
