@@ -10,9 +10,7 @@
 
 -module(target_sa_gen).
 
--export([from_proper_generator/1]).
-
--define(STORAGE, target_sa_gen_storage).
+-export([from_proper_generator/1, set_temperature_scaling/1]).
 
 -define(GENERATORS, [{fun is_atom/1, fun dont_change/1},
                      {fun is_list_type/1, fun list_gen_sa/1},
@@ -35,23 +33,8 @@
 
 -spec from_proper_generator(proper_types:type()) -> target:tmap().
 from_proper_generator(RawGenerator) ->
-  case get(target_sa_gen_cache) of
-    undefined ->
-      put(target_sa_gen_cache, #{}),
-      ok;
-    _ ->
-      %% use existing cache
-      ok
-  end,
-  Generator = cook(RawGenerator),
-  Hash = erlang:phash2(Generator),
-  case get(?STORAGE) of
-    undefined ->
-      put(?STORAGE, #{ Hash => #{} });
-    M ->
-      put(?STORAGE, M#{ Hash => #{} })
-  end,
-  #{first => Generator, next => replace_generators(Generator, Hash)}.
+  put(target_sa_gen_cache, #{}),
+  #{first => RawGenerator, next => replace_generators(RawGenerator)}.
 
 cook(Type = {'$type',_Props}) ->
   Type;
@@ -65,7 +48,8 @@ cook(RawType) ->
       proper_types:exactly(RawType)
   end.
 
-replace_generators(Gen, _Hash) ->
+replace_generators(RawGen) ->
+  Gen = cook(RawGen),
   case get_replacer(Gen) of
     {ok, Replacer} ->
       %% replaced generator
@@ -143,8 +127,15 @@ adjust_temperature({Depth, Temperature}) ->
 adjust_temperature(Temp) ->
   Temp.
 
+-spec set_temperature_scaling(boolean) -> 'ok'.
+set_temperature_scaling(Enabled) ->
+  put(target_sa_gen_temperature_scaling, Enabled).
+
 temperature_scaling(X) ->
-  X / (1.0 + X).
+  case get(target_sa_gen_temperature_scaling) of
+    false -> 1.0;
+    _ -> X / (1.0 + X)
+  end.
 
 calculate_temperature({Depth, Temp}) ->
   temperature_scaling(Temp*Depth);
@@ -153,7 +144,7 @@ calculate_temperature(Temp) ->
 
 %% sample
 sample_from_type(Type, Temp) ->
-  #{next := Gen} = from_proper_generator(Type),
+  Gen = replace_generators(Type),
   {ok, Generated} = proper_gen:clean_instance(proper_gen:safe_generate(Type)),
   Gen(Generated, Temp).
 
@@ -282,7 +273,7 @@ list_gen_internal(L=[H|T], Temp, InternalType, GrowthCoefficient) ->
     del ->
       list_gen_internal(T, Temp, InternalType, GrowthCoefficient);
     modify ->
-      #{next := ElementType} = from_proper_generator(InternalType),
+      ElementType = replace_generators(InternalType),
       [ElementType(H, Temp) | list_gen_internal(T, Temp, InternalType, GrowthCoefficient)];
     nothing ->
       [H | list_gen_internal(T, Temp, InternalType, GrowthCoefficient)]
@@ -294,8 +285,7 @@ is_shrink_list_type(Type) ->
 
 shrink_list_gen_sa(Type) ->
   {ok, Env} = proper_types:find_prop(env, Type),
-  #{next := TypeGen} = from_proper_generator(Env),
-  TypeGen.
+  replace_generators(Env).
 
 %% vector
 is_vector_type(Type) ->
@@ -303,7 +293,7 @@ is_vector_type(Type) ->
 
 vector_gen_sa(Type) ->
   {ok, InternalType} = proper_types:find_prop(internal_type, Type),
-  #{next := ElementType} = from_proper_generator(InternalType),
+  ElementType = replace_generators(InternalType),
   fun GEN([], _) ->
       [];
       GEN([H|T], Temp) ->
@@ -341,14 +331,14 @@ binary_vector() ->
   proper_types:vector(42, proper_types:integer(0, 255)).
 
 binary_gen_sa(_Type) ->
-  #{next := ListGen} = from_proper_generator(binary_list()),
+  ListGen = replace_generators(binary_list()),
   fun (Base, Temp) ->
       ListRepr = binary_to_list(Base),
       list_to_binary(ListGen(ListRepr, ?SLTEMP(Temp)))
   end.
 
 binary_len_gen_sa(_Type) ->
-  #{next := VectorGen} = from_proper_generator(binary_vector()),
+  VectorGen = replace_generators(binary_vector()),
   fun (Base, Temp) ->
       ListRepr = binary_to_list(Base),
       list_to_binary(VectorGen(ListRepr, ?SLTEMP(Temp)))
@@ -363,10 +353,7 @@ is_tuple_type(Type) ->
 tuple_gen_sa(Type) ->
   {ok, InternalTuple} = proper_types:find_prop(internal_types, Type),
   InternalTypes = tuple_to_list(InternalTuple),
-  ElementGens = lists:map(fun (E) ->
-                              #{next := Gen} = from_proper_generator(E),
-                              Gen
-                          end,
+  ElementGens = lists:map(fun replace_generators/1,
                           InternalTypes),
   fun ({}, _) -> {};
       (Base, Temp) ->
@@ -388,8 +375,7 @@ is_fixed_list_type(Type) ->
 fixed_list_gen_sa(Type) ->
   {ok, InternalTypes} = proper_types:find_prop(internal_types, Type),
   ElementGens = lists:map(fun (E) ->
-                              #{next := Gen} = from_proper_generator(E),
-                              {Gen, E}
+                              {replace_generators(E), E}
                           end,
                           InternalTypes),
   fun ([], _) -> [];
@@ -398,12 +384,12 @@ fixed_list_gen_sa(Type) ->
                             fun ({_, ElementType}, []) ->
                                 {sample_from_type(ElementType, ?TEMP(Temp)), []};
                                 ({ElementGen, ElementType}, [B|T]) ->
-                                  case proper_types:is_instance(B, ElementType) of
-                                    true ->
-                                      {ElementGen(B, ?TEMP(Temp)), T};
-                                    false ->
-                                      {sample_from_type(ElementType, ?TEMP(Temp)), [B|T]}
-                                    end
+                                case proper_types:is_instance(B, ElementType) of
+                                  true ->
+                                    {ElementGen(B, ?TEMP(Temp)), T};
+                                  false ->
+                                    {sample_from_type(ElementType, ?TEMP(Temp)), [B|T]}
+                                end
                             end,
                             Base,
                             ElementGens),
@@ -445,7 +431,7 @@ union_gen_sa(Type) ->
           case get_cached_union(Type, Base) of
             {ok, ET} ->
               %% this type generated Base
-              #{next := ETGen} = from_proper_generator(ET),
+              ETGen = replace_generators(ET),
               Modified = ETGen(Base, Temp),
               set_cache_union(Type, Modified, ET),
               Modified;
@@ -488,7 +474,7 @@ del_cache_let(Type, Combined) ->
 let_gen_sa(Type) ->
   {ok, Combine} = proper_types:find_prop(combine, Type),
   {ok, PartsType} = proper_types:find_prop(parts_type, Type),
-  #{next := PartsGen} = from_proper_generator(PartsType),
+  PartsGen = replace_generators(PartsType),
   fun (Base, Temp) ->
       LetOuter = case get_cached_let(Type, Base) of
                    {ok, Stored} ->
@@ -511,7 +497,7 @@ let_gen_sa(Type) ->
       Combined = proper_types:cook_outer(RawCombined),
       NewValue = case proper_types:is_type(Combined) of
                    true ->
-                     #{next := InternalGen} = from_proper_generator(Combined),
+                     InternalGen = replace_generators(Combined),
                      InternalGen(Base, Temp);
                    false ->
                      Combined
@@ -552,7 +538,7 @@ get_size(Type, Temp) ->
   set_cache_size(Type, Size),
   Size.
 
-save_sized_generation(Base, Temp, #{first := First, next := Next}) ->
+save_sized_generation(Base, Temp, Next, First) ->
   try
     %% can fail with for example a fixed list
     Next(Base, Temp)
@@ -568,28 +554,28 @@ wrapper_gen_sa(Type) ->
       if
         is_function(Gen, 1) ->
           fun (Base, Temp) ->
-              #{next := Internal} = from_proper_generator(Gen(Type)),
+              Internal = replace_generators(Gen(Type)),
               Internal(Base, Temp)
           end;
         is_function(Gen, 2) ->
           fun (Base, Temp) ->
               Size = get_size(Type, ?TEMP(Temp)),
-              SAGen = from_proper_generator(Gen(Type, Size)),
-              save_sized_generation(Base, Temp, SAGen)
+              Next = replace_generators(Gen(Type, Size)),
+              save_sized_generation(Base, Temp, Next, Type)
           end
       end;
     Gen ->
       if
         is_function(Gen, 0) ->
           fun (Base, Temp) ->
-              #{next := Internal} = from_proper_generator(Gen()),
+              Internal = replace_generators(Gen()),
               Internal(Base, Temp)
           end;
         is_function(Gen, 1) ->
           fun (Base, Temp) ->
               Size = get_size(Type, ?TEMP(Temp)),
-              SAGen = from_proper_generator(Gen(Size)),
-              save_sized_generation(Base, Temp, SAGen)
+              Next = replace_generators(Gen(Size)),
+              save_sized_generation(Base, Temp, Next, Type)
           end
       end
   end.
