@@ -28,10 +28,10 @@
 %% SA search strategy
 -type temperature() :: float().
 
--record(sa_target, {first = null,  % proper_types:type()
-                    next = null,   % fun((_, _) -> proper_types:type()
-                    current_generated = null,
-                    last_generated = null
+-record(sa_target, {first = null :: proper_types:type(),
+                    next  = null :: fun((_, _) -> proper_types:type()),
+                    current_generated = null :: proper_gen:instance(),
+                    last_generated    = null :: proper_gen:instance()
                    }).
 -type sa_target() :: #sa_target{}.
 
