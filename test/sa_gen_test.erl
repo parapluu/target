@@ -37,7 +37,7 @@ list_test() ->
   #{next := TG} = target_sa_gen:from_proper_generator(Gen),
   %% apply the generator 100 time and check
   %% that nothing crashes
-  appl(TG, 0, 100),
+  appl(TG, [], 100),
   ok.
 
 -spec combine_test() -> 'ok'.
@@ -48,7 +48,7 @@ combine_test() ->
   #{next := TG} = target_sa_gen:from_proper_generator(Gen),
   %% apply the generator 100 time and check
   %% that nothing crashes
-  appl(TG, 0, 100),
+  appl(TG, [], 100),
   ok.
 
 appl(_, A, 0) -> A;
