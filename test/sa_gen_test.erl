@@ -216,12 +216,9 @@ simple_graph() ->
          V = lists:usort(RawV),
          case length(V) > 1 of
            true ->
-             ?LET(E, simple_edges(V),
-                  begin
-                    exactly({V, E})
-                  end);
+             ?LET(E, simple_edges(V), {V, E});
            _ ->
-             exactly({V, []})
+             {V, []}
          end
        end).
 

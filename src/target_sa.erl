@@ -19,7 +19,7 @@
          retrieve_target/1,
          update_global_fitness/1,
          get_shrinker/1
-	]).
+        ]).
 %% lib
 -export([integer/0, integer/2, float/0, float/2]).
 
@@ -80,13 +80,13 @@ acceptance_function_standard(EnergyCurrent, EnergyNew, Temperature) ->
       true;
     false ->
       %% probabilistic acceptance (always between 0.0 and 0.5)
-      AcceptanceProbability = 
-	try
-	  %%  1 / (1 + math:exp(abs(EnergyCurrent - EnergyNew) / Temperature))
-	  math:exp(-(EnergyCurrent - EnergyNew) / Temperature)
-	catch
-	  error:badarith -> 0.0
-	end,
+      AcceptanceProbability =
+        try
+          %%  1 / (1 + math:exp(abs(EnergyCurrent - EnergyNew) / Temperature))
+          math:exp(-(EnergyCurrent - EnergyNew) / Temperature)
+        catch
+          error:badarith -> 0.0
+        end,
       %% if random probability is less, accept
       ?RANDOM_PROBABILITY < AcceptanceProbability
   end.
@@ -99,11 +99,11 @@ acceptance_function_normalized(EnergyCurrent, EnergyNew, Temperature) ->
     false ->
       %% probabilistic acceptance (always between 0.0 and 0.5)
       AcceptanceProbability =
-	try
-	  1 / (1 + math:exp( (1 -  (EnergyNew/EnergyCurrent)) / Temperature))
-	catch
-	  error:badarith -> 0.0
-	end,
+        try
+          1 / (1 + math:exp( (1 -  (EnergyNew/EnergyCurrent)) / Temperature))
+        catch
+          error:badarith -> 0.0
+        end,
       %% if random probability is less, accept
       ?RANDOM_PROBABILITY < AcceptanceProbability
   end.
@@ -381,9 +381,9 @@ update_all_targets(Dict, [K|T]) ->
 -spec get_shrinker(target:tmap()) -> proper_types:type().
 get_shrinker(#{first := First}) -> First;
 get_shrinker(#{gen := Gen}) -> Gen.
-  %% Perhaps the following implementation is more kosher
-  %% #{first := First} = target_sa_gen:from_proper_generator(Gen),
-  %% First.
+%% Perhaps the following implementation is more kosher
+%% #{first := First} = target_sa_gen:from_proper_generator(Gen),
+%% First.
 
 
 %%--------------------------------------------------------------------------

@@ -36,20 +36,8 @@ from_proper_generator(RawGenerator) ->
   put(target_sa_gen_cache, #{}),
   #{first => RawGenerator, next => replace_generators(RawGenerator)}.
 
-cook(Type = {'$type',_Props}) ->
-  Type;
-cook(RawType) ->
-  if
-    is_tuple(RawType) ->
-      proper_types:tuple(tuple_to_list(RawType));
-    is_list(RawType) ->  %% CAUTION: this must handle improper lists
-      proper_types:fixed_list(RawType);
-    true ->  %% default case (covers integers, floats, atoms, binaries, ...)
-      proper_types:exactly(RawType)
-  end.
-
 replace_generators(RawGen) ->
-  Gen = cook(RawGen),
+  Gen = proper_types:cook_outer(RawGen),
   case get_replacer(Gen) of
     {ok, Replacer} ->
       %% replaced generator
@@ -217,7 +205,7 @@ list_choice(empty, Temp) ->
              C < C_Add -> add;
              true      -> nothing
            end,
-  %% io:format("ChoiceE: ~p ~n", [C]),
+  %% io:format("ChoiceE: ~p ~n", [Choice]),
   Choice;
 list_choice({list, GrowthCoefficient}, Temp) ->
   C = rand:uniform(),
@@ -232,7 +220,7 @@ list_choice({list, GrowthCoefficient}, Temp) ->
              C < C_Mod -> modify;
              true      -> nothing
            end,
-  %% io:format("ChoiceL: ~p ~n", [C]),
+  %% io:format("ChoiceL: ~p ~n", [Choice]),
   Choice;
 list_choice(vector, Temp) ->
   C = rand:uniform(),
@@ -248,7 +236,6 @@ list_choice(tuple, Temp) ->
 
 list_gen_sa(Type) ->
   {ok, InternalType} = proper_types:find_prop(internal_type, Type),
-  %% io:format("list"),
   fun (Base, Temp) ->
       GrowthCoefficient = (rand:uniform() * 0.8) + 0.1,
       list_gen_internal(Base, Temp, InternalType, GrowthCoefficient)
@@ -466,10 +453,10 @@ set_cache_let(Type, Combined, Base) ->
   M = get(target_sa_gen_cache),
   put(target_sa_gen_cache, M#{Key => Base}).
 
-del_cache_let(Type, Combined) ->
-  Key = erlang:phash2({let_type, Type, Combined}),
-  M = get(target_sa_gen_cache),
-  put(target_sa_gen_cache, maps:remove(Key, M)).
+%% del_cache_let(Type, Combined) ->
+%%   Key = erlang:phash2({let_type, Type, Combined}),
+%%   M = get(target_sa_gen_cache),
+%%   put(target_sa_gen_cache, maps:remove(Key, M)).
 
 let_gen_sa(Type) ->
   {ok, Combine} = proper_types:find_prop(combine, Type),
@@ -478,32 +465,47 @@ let_gen_sa(Type) ->
   fun (Base, Temp) ->
       LetOuter = case get_cached_let(Type, Base) of
                    {ok, Stored} ->
-                     del_cache_let(Type, Base),
-                     C = rand:uniform(),
-                     C_Cnt = case ?TEMP(Temp) of
-                               0.0 -> 0.0;
-                               T -> math:sqrt(T)
-                             end,
-                     if
-                       C < C_Cnt ->
-                         PartsGen(Stored, ?SLTEMP(Temp));
-                       true ->
-                         Stored
-                     end;
+                    %%  del_cache_let(Type, Base),
+                     PartsGen(Stored, ?SLTEMP(Temp));
                    not_found ->
                      sample_from_type(PartsType, ?SLTEMP(Temp))
                  end,
       RawCombined = Combine(LetOuter),
-      Combined = proper_types:cook_outer(RawCombined),
-      NewValue = case proper_types:is_type(Combined) of
-                   true ->
-                     InternalGen = replace_generators(Combined),
-                     InternalGen(Base, Temp);
-                   false ->
-                     Combined
-                 end,
+      NewValue = match_cook(Base, RawCombined, Temp),
       set_cache_let(Type, NewValue, LetOuter),
       NewValue
+  end.
+
+match_cook(Base, Type = {'$type', _}, Temp) ->
+  case Base of
+    no_matching ->
+      sample_from_type(Type, ?TEMP(Temp));
+    _ ->
+      Gen = replace_generators(Type),
+      Gen(Base, ?SLTEMP(Temp))
+  end;
+match_cook(Base, RawType, Temp) ->
+  if
+    is_tuple(RawType) ->
+      MC = case is_tuple(Base) of
+        true ->
+          match_cook(tuple_to_list(Base), tuple_to_list(RawType), Temp);
+        false ->
+          match_cook(no_matching, tuple_to_list(RawType), Temp)
+        end,
+      list_to_tuple(MC);
+    is_list(RawType) ->
+      BasesWithRawTypes = case is_list(Base) andalso length(Base) =:= length(RawType) of
+        true ->
+          %% continue matching
+          lists:zip(Base, RawType);
+        false ->
+          %% no matching
+          lists:zip(lists:duplicate(length(RawType), no_matching) , RawType)
+        end,
+        lists:map(fun ({B, RT}) -> match_cook(B, RT, Temp) end, BasesWithRawTypes);
+    true ->
+      RawType
   end.
 
 %% lazy
