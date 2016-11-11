@@ -1,5 +1,5 @@
 {application, target,
- [{description, "Targeted search strategies for proper"},
+ [{description, "Targeted search strategies for PropEr"},
   {vsn, "0.1"},
   {registered, []},
   {applications, [compiler,kernel,stdlib]},
