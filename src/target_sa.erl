@@ -66,6 +66,16 @@
 
 -define(RANDOM_PROBABILITY, (rand:uniform())).
 
+printout(FormatStr) ->
+  printout(FormatStr, []).
+
+printout(FormatStr, Args) ->
+  case get(target_print_verbose) of
+    Printer when is_function(Printer) -> Printer(FormatStr, Args);
+    true -> io:format(FormatStr, Args);
+    _ -> ok
+  end.
+
 print_accepted(State, Utility, Temperature) ->
   case get(target_print_accepted) of
     Printer when is_function(Printer) -> Printer(State, Utility);
@@ -205,69 +215,69 @@ get_amount_of_steps(_) ->
   end.
 
 get_temperature_function() ->
-  io:format("Temperature Function: \t"),
+  printout("Temperature Function: \t"),
   case get(target_sa_tempfunc) of
     default ->
-      io:format("default~n"),
+      printout("default~n"),
       fun temperature_function_standard_sa/6;
     fast ->
-      io:format("fast~n"),
+      printout("fast~n"),
       fun temperature_function_fast_sa/6;
     very_fast ->
-      io:format("very fast~n"),
+      printout("very fast~n"),
       fun temperature_function_fast2_sa/6;
     reheat ->
-      io:format("decreasing reheating~n"),
+      printout("decreasing reheating~n"),
       fun temperature_function_reheat_sa/6;
     Fun when is_function(Fun) ->
       case proplists:lookup(arity, erlang:fun_info(Fun)) of
         {arity, 6} ->
-          io:format("configured ~p~n", [Fun]),
+          printout("configured ~p~n", [Fun]),
           Fun;
         _ ->
-          io:format("wrong arity of configured temperature function; using default instead~n"),
+          printout("wrong arity of configured temperature function; using default instead~n"),
           fun temperature_function_standard_sa/6
       end;
     undefined ->
-      io:format("default~n"),
+      printout("default~n"),
       fun temperature_function_standard_sa/6;
     _ ->
-      io:format("undefined configured temperature function; using default instead~n"),
+      printout("undefined configured temperature function; using default instead~n"),
       fun temperature_function_standard_sa/6
   end.
 
 get_acceptance_function() ->
-  io:format("Acceptance Function: \t"),
+  printout("Acceptance Function: \t"),
   case get(target_sa_acceptfunc) of
     default ->
-      io:format("default~n"),
+      printout("default~n"),
       fun acceptance_function_standard/3;
     hillclimbing ->
-      io:format("hillclimbing~n"),
+      printout("hillclimbing~n"),
       fun acceptance_function_hillclimbing/3;
     normalized ->
-      io:format("normalized~n"),
+      printout("normalized~n"),
       fun acceptance_function_normalized/3;
     Fun when is_function(Fun) ->
       case proplists:lookup(arity, erlang:fun_info(Fun)) of
         {arity, 3} ->
-          io:format("configured ~p~n", [Fun]),
+          printout("configured ~p~n", [Fun]),
           Fun;
         _ ->
-          io:format("wrong arity of configured acceptance function; using default instead~n"),
+          printout("wrong arity of configured acceptance function; using default instead~n"),
           fun acceptance_function_standard/3
       end;
     undefined ->
-      io:format("default~n"),
+      printout("default~n"),
       fun acceptance_function_standard/3;
     _ ->
-      io:format("undefined configured acceptance function; using default instead~n"),
+      printout("undefined configured acceptance function; using default instead~n"),
       fun acceptance_function_standard/3
   end.
 
 -spec init_strategy(Prop) -> Prop when Prop :: target_strategy:property().
 init_strategy(Prop) ->
-  io:format("-- Simulated Annealing Search Strategy --~n"),
+  printout("-- Simulated Annealing Search Strategy --~n"),
   put(target_sa_data, #sa_data{k_max = get_amount_of_steps(Prop),
                                p = get_acceptance_function(),
                                temp_func = get_temperature_function()
@@ -296,9 +306,9 @@ next_func(SATarget) ->
   Temperature = GlobalData#sa_data.temperature,
   %% calculating the max generated size
   %% MaxSize = trunc(?MAX_SIZE * Temperature) + 1,
-  %% io:format("MaxSize: ~p Temperature: ~p ~n", [MaxSize, Temperature]),
+  %% printout("MaxSize: ~p Temperature: ~p ~n", [MaxSize, Temperature]),
   %% getting the generator for the next element (dependend on size and the last generated element)
-  %% io:format("~p  -- ~p ~n", [SATarget#sa_target.last_generated, SATarget#sa_target.next]),
+  %% printout("~p  -- ~p ~n", [SATarget#sa_target.last_generated, SATarget#sa_target.next]),
   NextGenerator = (SATarget#sa_target.next)(SATarget#sa_target.last_generated, Temperature),
   %% generate the next element
   {ok, Generated} = proper_gen:clean_instance(proper_gen:safe_generate(NextGenerator)),
@@ -337,6 +347,7 @@ update_global_fitness(Fitness) ->
                                Temperature) of
               true ->
                 %% accept new state
+                target_sa_gen:update_caches(accept),
                 print_accepted(Data, Fitness, Temperature),
                 NewState = update_all_targets(Data#sa_data.state),
                 %% calculate new temperature
@@ -353,6 +364,7 @@ update_global_fitness(Fitness) ->
               false ->
                 %% reject new state
                 %% calculate new temperature
+                target_sa_gen:update_caches(reject),
                 {NewTemperature, AdjustedK} = (Data#sa_data.temp_func)(Temperature,
                                                                        Data#sa_data.last_energy,
                                                                        Fitness,

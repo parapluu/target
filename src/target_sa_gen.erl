@@ -10,7 +10,7 @@
 
 -module(target_sa_gen).
 
--export([from_proper_generator/1, set_temperature_scaling/1]).
+-export([from_proper_generator/1, set_temperature_scaling/1, update_caches/1]).
 
 -define(GENERATORS, [{fun is_atom/1, fun dont_change/1},
                      {fun is_list_type/1, fun list_gen_sa/1},
@@ -31,9 +31,18 @@
 -define(TEMP(T), calculate_temperature(T)).
 -define(SLTEMP(T), adjust_temperature(T)).
 
+-spec update_caches('accept' | 'reject') -> 'ok'.
+update_caches(accept) ->
+  put(target_sa_gen_cache_backup, get(target_sa_gen_cache)),
+  ok;
+update_caches(reject) ->
+  put(target_sa_gen_cache, get(target_sa_gen_cache_backup)),
+  ok.
+
 -spec from_proper_generator(proper_types:type()) -> target:tmap().
 from_proper_generator(RawGenerator) ->
   put(target_sa_gen_cache, #{}),
+  put(target_sa_gen_cache_backup, #{}),
   #{first => RawGenerator, next => replace_generators(RawGenerator)}.
 
 replace_generators(RawGen) ->
@@ -396,6 +405,11 @@ get_cached_union(Type, Combined) ->
     _ -> not_found
   end.
 
+del_cache_union(Type, Combined) ->
+  Key = erlang:phash2({union_type, Type, Combined}),
+  M = get(target_sa_gen_cache),
+  put(target_sa_gen_cache, maps:remove(Key, M)).
+
 set_cache_union(Type, Base, Combined) ->
   Key = erlang:phash2({union_type, Type, Combined}),
   M = get(target_sa_gen_cache),
@@ -417,6 +431,7 @@ union_gen_sa(Type) ->
         true ->
           case get_cached_union(Type, Base) of
             {ok, ET} ->
+              del_cache_union(Type, Base),
               %% this type generated Base
               ETGen = replace_generators(ET),
               Modified = ETGen(Base, Temp),
@@ -453,10 +468,10 @@ set_cache_let(Type, Combined, Base) ->
   M = get(target_sa_gen_cache),
   put(target_sa_gen_cache, M#{Key => Base}).
 
-%% del_cache_let(Type, Combined) ->
-%%   Key = erlang:phash2({let_type, Type, Combined}),
-%%   M = get(target_sa_gen_cache),
-%%   put(target_sa_gen_cache, maps:remove(Key, M)).
+del_cache_let(Type, Combined) ->
+  Key = erlang:phash2({let_type, Type, Combined}),
+  M = get(target_sa_gen_cache),
+  put(target_sa_gen_cache, maps:remove(Key, M)).
 
 let_gen_sa(Type) ->
   {ok, Combine} = proper_types:find_prop(combine, Type),
@@ -465,7 +480,7 @@ let_gen_sa(Type) ->
   fun (Base, Temp) ->
       LetOuter = case get_cached_let(Type, Base) of
                    {ok, Stored} ->
-                    %%  del_cache_let(Type, Base),
+                     del_cache_let(Type, Base),
                      PartsGen(Stored, ?SLTEMP(Temp));
                    not_found ->
                      sample_from_type(PartsType, ?SLTEMP(Temp))
@@ -488,25 +503,63 @@ match_cook(Base, RawType, Temp) ->
   if
     is_tuple(RawType) ->
       MC = case is_tuple(Base) of
-        true ->
-          match_cook(tuple_to_list(Base), tuple_to_list(RawType), Temp);
-        false ->
-          match_cook(no_matching, tuple_to_list(RawType), Temp)
-        end,
+             true ->
+               match_cook(tuple_to_list(Base), tuple_to_list(RawType), Temp);
+             false ->
+               match_cook(no_matching, tuple_to_list(RawType), Temp)
+           end,
       list_to_tuple(MC);
+    is_list(RawType) andalso is_list(Base) ->
+      case safe_zip(Base, RawType) of
+        {ok, ZippedBasesWithTypes} ->
+          per_element_match_cook(ZippedBasesWithTypes, Temp);
+        impossible ->
+            sample_from_type(RawType, ?TEMP(Temp))
+      end;
     is_list(RawType) ->
-      BasesWithRawTypes = case is_list(Base) andalso length(Base) =:= length(RawType) of
-        true ->
-          %% continue matching
-          lists:zip(Base, RawType);
-        false ->
-          %% no matching
-          lists:zip(lists:duplicate(length(RawType), no_matching) , RawType)
-        end,
-        lists:map(fun ({B, RT}) -> match_cook(B, RT, Temp) end, BasesWithRawTypes);
+      %% the base is not matching
+      per_element_match_cook(no_matching_list_zip(RawType), Temp);
     true ->
       RawType
   end.
+
+safe_zip(L, R) ->
+  safe_zip(L, R, []).
+
+safe_zip([], [], Acc) ->
+  {ok, lists:reverse(Acc)};
+safe_zip([HL | TL], [HR | TR], Acc) ->
+  safe_zip(TL, TR, [{HL, HR} | Acc]);
+safe_zip([], _, _) ->
+  impossible;
+safe_zip(_, [], _) ->
+  impossible;
+safe_zip(ITL, ITR, Acc) ->
+  case is_list(ITL) orelse is_list(ITR) of
+    true -> impossible;
+    _ -> {ok, construct_improper(Acc, {ITL, ITR})}
+  end.
+
+-dialyzer({no_improper_lists, construct_improper/2}).
+
+construct_improper([], IT) ->
+  IT;
+construct_improper([H|T], IT) ->
+  [H | construct_improper(T, IT)].
+
+%% handles improper lists
+no_matching_list_zip([]) -> [];
+no_matching_list_zip([H|T]) ->[{no_matching, H} | no_matching_list_zip(T)];
+no_matching_list_zip(ImproperTail) -> {no_matching, ImproperTail}.
+
+per_element_match_cook(ZippedBasesWithTypes, Temp) ->
+  safe_map(fun ({B, RT}) -> match_cook(B, RT, Temp) end, ZippedBasesWithTypes).
+
+safe_map(_Fun, []) -> [];
+safe_map(Fun, [H|T]) ->
+  [Fun(H) | safe_map(Fun, T)];
+safe_map(Fun, ImpT) ->
+  Fun(ImpT).
 
 %% lazy
 %% sized

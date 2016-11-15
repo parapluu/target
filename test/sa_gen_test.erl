@@ -227,3 +227,22 @@ simple_edges(V) ->
 
 simple_edge(V) ->
   ?SUCHTHAT({V1, V2}, {oneof(V), oneof(V)}, V1 > V2).
+
+%% improper lists
+%% kvlist() ->
+%%   list({integer(), integer()}).
+
+il_type() ->
+  ?LET(I, integer(),
+       [I|42]).
+
+prop_il() ->
+  ?FORALL_SA(_L, ?TARGET(#{gen => il_type()}),
+             true).
+
+-spec improper_list_test() -> 'ok'.
+improper_list_test() ->
+  put(target_sa_steps, 1000),
+  put(target_sa_tempfunc, default),
+  put(target_sa_acceptfunc, default),
+  ?assert(proper:quickcheck(prop_il(), ?PROPER_OPTIONS)).
