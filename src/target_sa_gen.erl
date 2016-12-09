@@ -128,16 +128,23 @@ adjust_temperature(Temp) ->
 set_temperature_scaling(Enabled) ->
   put(target_sa_gen_temperature_scaling, Enabled).
 
-temperature_scaling(X) ->
+temperature_scaling(Temp, Depth) ->
   case get(target_sa_gen_temperature_scaling) of
     false -> 1.0;
-    _ -> X / (1.0 + X)
+    full ->
+      X = Temp * Depth,
+      X / (1.0 + X);
+    even ->
+      Temp;
+    _ ->
+      X = Temp * Depth,
+      0.1 * X / (1.0 + X)
   end.
 
 calculate_temperature({Depth, Temp}) ->
-  temperature_scaling(Temp*Depth);
+  temperature_scaling(Temp, Depth);
 calculate_temperature(Temp) ->
-  temperature_scaling(Temp).
+  temperature_scaling(Temp, 1).
 
 %% sample
 sample_from_type(Type, Temp) ->
@@ -370,13 +377,13 @@ is_fixed_list_type(Type) ->
 
 fixed_list_gen_sa(Type) ->
   {ok, InternalTypes} = proper_types:find_prop(internal_types, Type),
-  ElementGens = lists:map(fun (E) ->
-                              {replace_generators(E), E}
-                          end,
-                          InternalTypes),
+  ElementGens = safe_map(fun (E) ->
+                             {replace_generators(E), E}
+                         end,
+                         InternalTypes),
   fun ([], _) -> [];
       (Base, Temp) ->
-      {NewFixedList, _} = lists:mapfoldl(
+      {NewFixedList, _} = safe_mapfoldl(
                             fun ({_, ElementType}, []) ->
                                 {sample_from_type(ElementType, ?TEMP(Temp)), []};
                                 ({ElementGen, ElementType}, [B|T]) ->
@@ -385,6 +392,13 @@ fixed_list_gen_sa(Type) ->
                                     {ElementGen(B, ?TEMP(Temp)), T};
                                   false ->
                                     {sample_from_type(ElementType, ?TEMP(Temp)), [B|T]}
+                                end;
+                                ({ElementGen, ElementType}, ImproperTail) ->
+                                case proper_types:is_instance(ImproperTail, ElementType) of
+                                  true ->
+                                    {ElementGen(ImproperTail, ?TEMP(Temp)), improper_ending};
+                                  false ->
+                                    {sample_from_type(ElementType, ?TEMP(Temp)), improper_ending}
                                 end
                             end,
                             Base,
@@ -398,54 +412,45 @@ is_union_type(Type) ->
   has_same_generator(Type, proper_types:union([42])) orelse
     has_same_generator(Type, proper_types:weighted_union([{1, 1}])).
 
-get_cached_union(Type, Combined) ->
-  Key = erlang:phash2({union_type, Type, Combined}),
-  case get(target_sa_gen_cache) of
-    #{Key := Base} -> {ok, Base};
-    _ -> not_found
-  end.
-
-del_cache_union(Type, Combined) ->
-  Key = erlang:phash2({union_type, Type, Combined}),
-  M = get(target_sa_gen_cache),
-  put(target_sa_gen_cache, maps:remove(Key, M)).
-
-set_cache_union(Type, Base, Combined) ->
-  Key = erlang:phash2({union_type, Type, Combined}),
-  M = get(target_sa_gen_cache),
-  put(target_sa_gen_cache, M#{Key => Base}).
-
 union_gen_sa(Type) ->
   {ok, Env} = proper_types:find_prop(env, Type),
   %% io:format("union"),
   fun (Base, Temp) ->
-      C = rand:uniform(),
-      C_Chg = 0.5 * ?TEMP(Temp),
-      if
-        C < C_Chg ->
+      %% check if base is of any instance of the
+      %% sub elements
+      case lists:foldr(fun (E, Acc) ->
+                           case proper_types:is_instance(Base, E) of
+                             true -> [E|Acc];
+                             false -> Acc
+                           end
+                       end, [], Env) of
+        [] ->
+          %% generate new
           Index = trunc(rand:uniform() * length(Env)) + 1,
           ET = lists:nth(Index, Env),
           {ok, Value} = proper_gen:clean_instance(proper_gen:safe_generate(ET)),
-          set_cache_union(Type, Value, ET),
           Value;
-        true ->
-          case get_cached_union(Type, Base) of
-            {ok, ET} ->
-              del_cache_union(Type, Base),
-              %% this type generated Base
-              ETGen = replace_generators(ET),
-              Modified = ETGen(Base, Temp),
-              set_cache_union(Type, Modified, ET),
-              Modified;
-            not_found ->
-              %% first time
+        PossibleGens  ->
+          C = rand:uniform(),
+          C_Kep =         0.3 * ?TEMP(Temp),
+          C_Chg = C_Kep + 0.3 * ?TEMP(Temp),
+          if
+            C < C_Kep ->
+              %% keep
+              Base;
+            C < C_Chg ->
+              %% change choice
               Index = trunc(rand:uniform() * length(Env)) + 1,
               ET = lists:nth(Index, Env),
               {ok, Value} = proper_gen:clean_instance(proper_gen:safe_generate(ET)),
-              set_cache_union(Type, Value, ET),
-              Value
+              Value;
+            true ->
+              %% modify amongst the possible
+              Index = trunc(rand:uniform() * length(PossibleGens)) + 1,
+              ElementGen = lists:nth(Index, PossibleGens),
+              SAGen = replace_generators(ElementGen),
+              SAGen(Base, Temp)
           end
-
       end
   end.
 
@@ -502,19 +507,26 @@ match_cook(Base, Type = {'$type', _}, Temp) ->
 match_cook(Base, RawType, Temp) ->
   if
     is_tuple(RawType) ->
-      MC = case is_tuple(Base) of
-             true ->
-               match_cook(tuple_to_list(Base), tuple_to_list(RawType), Temp);
-             false ->
-               match_cook(no_matching, tuple_to_list(RawType), Temp)
-           end,
-      list_to_tuple(MC);
+      case is_set(RawType) orelse is_dict(RawType) of
+        true ->
+          %% we do not take appart erlangs dicts and sets
+          %% io:format("Dict or Set~n"),
+          RawType;
+        _ ->
+          MC = case is_tuple(Base) of
+                 true ->
+                   match_cook(tuple_to_list(Base), tuple_to_list(RawType), Temp);
+                 false ->
+                   match_cook(no_matching, tuple_to_list(RawType), Temp)
+               end,
+          list_to_tuple(MC)
+      end;
     is_list(RawType) andalso is_list(Base) ->
       case safe_zip(Base, RawType) of
         {ok, ZippedBasesWithTypes} ->
           per_element_match_cook(ZippedBasesWithTypes, Temp);
         impossible ->
-            sample_from_type(RawType, ?TEMP(Temp))
+          sample_from_type(RawType, ?TEMP(Temp))
       end;
     is_list(RawType) ->
       %% the base is not matching
@@ -522,6 +534,29 @@ match_cook(Base, RawType, Temp) ->
     true ->
       RawType
   end.
+
+%% handles improper lists
+no_matching_list_zip([]) -> [];
+no_matching_list_zip([H|T]) ->[{no_matching, H} | no_matching_list_zip(T)];
+no_matching_list_zip(ImproperTail) -> {no_matching, ImproperTail}.
+
+per_element_match_cook(ZippedBasesWithTypes, Temp) ->
+  safe_map(fun ({B, RT}) -> match_cook(B, RT, Temp) end, ZippedBasesWithTypes).
+
+safe_map(_Fun, []) -> [];
+safe_map(Fun, [H|T]) ->
+  [Fun(H) | safe_map(Fun, T)];
+safe_map(Fun, ImpT) ->
+  Fun(ImpT).
+
+safe_mapfoldl(_, Acc, []) ->
+  {[], Acc};
+safe_mapfoldl(Fun, Acc, [H|T]) ->
+  {NewElement, NewAcc} = Fun(H, Acc),
+  {MapReturn, FoldReturn} = safe_mapfoldl(Fun, NewAcc, T),
+  {[NewElement | MapReturn], FoldReturn};
+safe_mapfoldl(Fun, Acc, ImproperTail) ->
+  Fun(ImproperTail, Acc).
 
 safe_zip(L, R) ->
   safe_zip(L, R, []).
@@ -547,19 +582,12 @@ construct_improper([], IT) ->
 construct_improper([H|T], IT) ->
   [H | construct_improper(T, IT)].
 
-%% handles improper lists
-no_matching_list_zip([]) -> [];
-no_matching_list_zip([H|T]) ->[{no_matching, H} | no_matching_list_zip(T)];
-no_matching_list_zip(ImproperTail) -> {no_matching, ImproperTail}.
+%% unsafe checks
+is_set({set, _, _, _, _, _, _, _, _}) -> true;
+is_set(_) -> false.
 
-per_element_match_cook(ZippedBasesWithTypes, Temp) ->
-  safe_map(fun ({B, RT}) -> match_cook(B, RT, Temp) end, ZippedBasesWithTypes).
-
-safe_map(_Fun, []) -> [];
-safe_map(Fun, [H|T]) ->
-  [Fun(H) | safe_map(Fun, T)];
-safe_map(Fun, ImpT) ->
-  Fun(ImpT).
+is_dict({dict, _, _, _, _, _, _, _, _}) -> true;
+is_dict(_) -> false.
 
 %% lazy
 %% sized

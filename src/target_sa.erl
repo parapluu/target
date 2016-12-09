@@ -21,6 +21,8 @@
          get_shrinker/1
         ]).
 %% lib
+-export([reset/0, get_last_fitness/0]).
+%% standrat types
 -export([integer/0, integer/2, float/0, float/2]).
 
 -include_lib("proper/include/proper_common.hrl").  % code below uses ?LET
@@ -275,6 +277,16 @@ get_acceptance_function() ->
       fun acceptance_function_standard/3
   end.
 
+-spec get_last_fitness() -> target:fitness().
+get_last_fitness() ->
+  State = get(target_sa_data),
+  State#sa_data.last_energy.
+
+-spec reset() -> ok.
+reset() ->
+  State = get(target_sa_data),
+  put(target_sa_data, State#sa_data{last_energy = null}).
+
 -spec init_strategy(Prop) -> Prop when Prop :: target_strategy:property().
 init_strategy(Prop) ->
   printout("-- Simulated Annealing Search Strategy --~n"),
@@ -373,9 +385,7 @@ update_global_fitness(Fitness) ->
                                                                        false),
                 Data#sa_data{k_current = AdjustedK, temperature = NewTemperature}
             end,
-  %% io:format("~p~n", [Data]),
   put(target_sa_data, NewData),
-  %% timer:sleep(100),
   ok.
 
 %% update the last generated value with the current generated value

@@ -17,7 +17,7 @@ all: get-deps compile tests dialyzer
 get-deps:
 	$(REBAR) get-deps
 
-compile:
+compile: get-deps
 	$(REBAR) compile
 
 dialyzer: .plt/proper_plt compile

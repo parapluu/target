@@ -156,6 +156,18 @@ tuple_type() ->
   proper_types:tuple([integer(), integer()]).
 
 
+-spec let_union_test() -> 'ok'.
+let_union_test() ->
+  put(target_sa_testing, true),
+  ?assert(proper:quickcheck(prop_union_let(), ?PROPER_OPTIONS)).
+
+prop_union_let() ->
+  C = lists:seq(0,1),
+  ?FORALL_SA(_E, ?TARGET(#{gen => union_let_type(C)}), true).
+
+union_let_type(C) ->
+  ?LET(E, union(C), E).
+
 -spec lazy_test() -> 'ok'.
 lazy_test() ->
   put(target_sa_testing, true),
