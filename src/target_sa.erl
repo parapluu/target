@@ -284,8 +284,22 @@ get_last_fitness() ->
 
 -spec reset() -> ok.
 reset() ->
-  State = get(target_sa_data),
-  put(target_sa_data, State#sa_data{last_energy = null}).
+  Data = get(target_sa_data),
+  put(target_sa_data, Data#sa_data{state = reset_all_targets(Data#sa_data.state),
+                                   last_energy = null,
+                                   k_max = Data#sa_data.k_max - Data#sa_data.k_current,
+                                   k_current = 0}).
+
+reset_all_targets(TargetDict) ->
+  reset_all_targets(TargetDict, dict:fetch_keys(TargetDict)).
+
+reset_all_targets(Dict,  []) ->
+  Dict;
+reset_all_targets(Dict, [K|T]) ->
+  {S, N, F} = dict:fetch(K, Dict),
+  {ok, ResetValue} = proper_gen:clean_instance(proper_gen:safe_generate(S#sa_target.first)),
+  NewVal = {S#sa_target{last_generated = ResetValue}, N, F},
+  reset_all_targets(dict:store(K, NewVal, Dict), T).
 
 -spec init_strategy(Prop) -> Prop when Prop :: target_strategy:property().
 init_strategy(Prop) ->
