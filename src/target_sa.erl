@@ -22,8 +22,10 @@
         ]).
 %% lib
 -export([reset/0, get_last_fitness/0]).
-%% standrat types
--export([integer/0, integer/2, float/0, float/2]).
+%% standard types
+-export([integer/0, integer/2, float/0, float/2, list/1]).
+
+-export_type([first_next/0]).
 
 -include_lib("proper/include/proper_common.hrl").  % code below uses ?LET
 
@@ -477,3 +479,58 @@ make_inrange(Val, Offset, L, R) when L =/= inf, Val + Offset < L ->
 make_inrange(Val, Offset, L, R) when R =/= inf, Val + Offset > R ->
   make_inrange(Val - Offset, L, R);
 make_inrange(Val, Offset, L, R) -> make_inrange(Val + Offset, L, R).
+
+
+%% list
+-spec list(proper_types:type()) -> first_next().
+list(Type) ->
+  #{first => proper_types:list(Type),
+  next=> list_next(Type)}.
+
+list_next(Type) ->
+  fun (Base, _T) ->
+    GrowthCoefficient = (rand:uniform() * 0.8) + 0.1,
+    list_gen_internal(Base, 0.5, Type, GrowthCoefficient)
+  end.
+
+list_gen_internal([], Temp, InternalType, GrowthCoefficient) ->
+  %% chance to add an element
+  case list_choice(empty, Temp) of
+    add ->
+      {ok, New} = proper_gen:clean_instance(proper_gen:safe_generate(InternalType)),
+      [New | list_gen_internal([], Temp, InternalType, GrowthCoefficient)];
+    nothing -> []
+  end;
+list_gen_internal(L=[H|T], Temp, InternalType, GrowthCoefficient) ->
+  %% chance to delete current element
+  %% chance to add element infront of current element
+  case list_choice(GrowthCoefficient, Temp) of
+    add ->
+      {ok, New} = proper_gen:clean_instance(proper_gen:safe_generate(InternalType)),
+      [New | list_gen_internal(L, Temp, InternalType, GrowthCoefficient)];
+    del ->
+      list_gen_internal(T, Temp, InternalType, GrowthCoefficient);
+    nothing ->
+      [H | list_gen_internal(T, Temp, InternalType, GrowthCoefficient)]
+  end.
+
+list_choice(empty, Temp) ->
+  C = rand:uniform(),
+  C_Add = 0.5 * Temp,
+  Choice = if
+             C < C_Add -> add;
+             true      -> nothing
+           end,
+  Choice;
+list_choice(GrowthCoefficient, Temp) ->
+  C = rand:uniform(),
+  AddCoefficient = 0.6 * GrowthCoefficient,
+  DelCoefficient = 0.6 * (1- GrowthCoefficient),
+  C_Add =          AddCoefficient * Temp,
+  C_Del = C_Add + (DelCoefficient * Temp),
+  Choice = if
+             C < C_Add -> add;
+             C < C_Del -> del;
+             true      -> nothing
+           end,
+  Choice.
