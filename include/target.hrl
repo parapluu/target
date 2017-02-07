@@ -11,8 +11,8 @@
 
 %% Define the search
 %%   global feedback
--define(MAXIMIZE(Fitness), target:adjust(Fitness, inf)).
--define(MAXIMIZE(Fitness, Target), target:adjust(Fitness, inf, ??Target)).
+-define(MAXIMIZE(Fitness), target:update_target_uvs(Fitness, inf)).
+-define(MAXIMIZE(Fitness, Target), target:update_target_uvs(Fitness, inf, ??Target)).
 %%   feedback for single targets
 -define(MAXIMIZE_UNTIL(Fitness, Threshold), target:adjust(Fitness, Threshold)).
 -define(MAXIMIZE_UNTIL(Fitness, Target, Threshold), target:adjust(Fitness, Threshold, ??Target)).
